@@ -248,6 +248,41 @@ result_table %>%
   distinct(e) 
 ```
 
+## Visualizing intervisibility results in BOM
+
+```{r most-intervisible-BOM-map}
+# load data on visibility and major sites
+mnd_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
+
+mnd_vis %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412
+
+# group by viewpoint, join to spatial points and plot on a map
+library(mapview)
+
+mnd_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:50) %>% 
+  mutate(n_log = log10(n)) %>% 
+  # join the summarized dataframe of 25 most visible mounds to mound spatial points
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  # activate the geometry column with proper CRS
+  st_as_sf(crs = 32635) %>% 
+  # plot the 25 most visible mounds, varying their radius by number of visible features from this location and varying color by mound height
+  mapview(cex = "n" , zcol = "n_log") + 
+  # show other mounds in the background as small dots
+  mapview(Yam_mnds,cex = 0.1) 
+  # differentiate mounds visible from 9412 (the most visible single features)
+  #mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9412), cex = 1)
+
+mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
+```
+
 ## Intervisibility of mounds in rasters with modelled vegetation
 Rather than calculating LoS over bare-earth DEM, let's model it over surface where random stands of trees and scrub have been simulated. We load two rasters produced via 08_VisibilityProm.R:
 
@@ -500,8 +535,8 @@ visible_at_dist <- function(id, buffer){
 test <- visible_at_dist(9416,5000)
 ```
 
-## eventually loop over different buffers to see which of the visible mounds falls to what distance band
-```{r}
+## Local to Regional: loop over different buffers to see which of the visible mounds falls to what distance band
+```{r prep-buffers}
 # create empty data container
 final_table <- data.frame(data.frame(id = numeric(), buffer = numeric(), targetid = numeric()))
 
@@ -567,21 +602,11 @@ write_csv(rbind(mound_sums_per_buffer,
 ```
 If we take the 10 most commanding mounds across all buffers, we see that although area covered by radius grows geometrically `(pi*r^2)`, the number of visible features only grows linearly (*2)
 
-CONTINUE # find the 10-20 most commanding mounds for each buffer zone and plot these
+CONTINUE # find the 10-20 most commanding mounds for each buffer zone and plot these and different visibility datasets: roads, settlements, and others
 
 
-# and different visibility datasets
-```{r}
-library(tmap)
-Yam_mnds %>% 
-  full_join(buffer_vis_table , by = c("TRAP" ="id")) %>%  
-  dplyr::filter(buffer == 40000) %>% 
-  mapview(cex = "n")
-  
-```
-
-### let's try with tmaps
-```{r}
+###  with tmaps
+```{r plot-buffers}
 library(tmap)
 tmap_mode(mode = "view")
 Yam_mnds %>% 
@@ -595,8 +620,9 @@ Yam_mnds %>%
 
 ```
 
-## Which mounds appear constantly despite distance erosion and other limitations?
-```{r}
+## Buffers: assess
+Which mounds appear constantly despite distance erosion and other limitations?
+```{r buffer-models-shared}
 bom_10 <- losNOveg_200[losNOveg_200 %in% los10veg_200]  # 108 are shared among the BOM and 10veg
 veg10_20 <- los10veg_200[los10veg_200 %in% los20veg_200] # 91 are shared among 10 and 20veg
 bom_10[bom_10%in%veg10_20] # 68 are shared among all lists  (persistently seeing mounds)
@@ -605,7 +631,7 @@ bom_10[bom_10%in%veg10_20] # 68 are shared among all lists  (persistently seeing
 
 
 
-### Intervisibility with settlements
+## Intervisibility with settlements
 
 - test for visibility between mounds and major settlements - eg. Kabyle, Dadopara and further south Turkish sites.
 
@@ -662,42 +688,7 @@ head(result_table)
 ```
 
 
-## Visualizing intervisibility results
-
-
-```{r most-intervisible-map}
-# load data on visibility and major sites
-mnd_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
-
-mnd_vis %>% 
-  filter(i == 333, visibility == 1) %>% 
-  arrange(desc(e)) %>% 
-  distinct(TRAPtarget) %>% 
-  pull() -> visiblefrom9412
-
-# group by viewpoint, join to spatial points and plot on a map
-library(mapview)
-
-mnd_vis %>% 
-  group_by(TRAPorigin) %>% 
-  tally(visibility) %>% 
-  arrange(desc(n)) %>% 
-  slice(1:50) %>% 
-  mutate(n_log = log10(n)) %>% 
-  # join the summarized dataframe of 25 most visible mounds to mound spatial points
-  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
-  # activate the geometry column with proper CRS
-  st_as_sf(crs = 32635) %>% 
-  # plot the 25 most visible mounds, varying their radius by number of visible features from this location and varying color by mound height
-  mapview(cex = "n" , zcol = "n_log") + 
-  # show other mounds in the background as small dots
-  mapview(Yam_mnds,cex = 0.1) 
-  # differentiate mounds visible from 9412 (the most visible single features)
-  #mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9412), cex = 1)
-
-mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
-```
-### most visible
+## The Winners
 ### Visibility lines for 9412
 ```{r most-commanding200-inBOM}
 losNOveg_200 <- mnd_vis %>% 
@@ -899,7 +890,7 @@ mapview(Yam_mnds %>% filter(prom250mbuff >75))
 
 
 
-## Prominence point map
+## Check raster:terrain results against the winners
 We have mound-centereed indeces of ruggedness and topographic prominence, which should align with the objective/dry measure of visibility above.
 The measures are at different scales. Prominence in 250m buffer specifies how big a fraction (in percentages) of the surrounding area is visible to a person on the mound.
 TPI is measured from on a scale from -3 to 2 , with most values between 0 and 1. TRI is between 0 and 4, with median at 1. Rough measure goes from 0 to 15, with mean at 3.7.
@@ -960,154 +951,4 @@ Y_elev
 test_see <- cansee(Y_elev, m8345, m8346, h1 = m8345[3]  , h2 = m8346[3])
 test_see
 
-```
-## Linestring creation
-
-Let's first see if we an create linestrings to later signal which mounds can *see* each other. To do that we need two columns of coordinates: the origin and the target. Here we explore the intervisibility of the seven BA mounds
-```{r linestring}
-# Test linestring creation from one origin and multiple target points. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
-
-coords <- as.matrix(cbind(as.data.frame(st_coordinates(BA[2])),
-                as.data.frame(st_coordinates(BA))))
-
-lines_sm <-  st_sfc(
-     lapply(1:nrow(coords),
-           function(i){
-             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
-           }))
-
-st_crs(lines_sm) <- st_crs(BA)
-
-
-library(mapview)
-mapview(lines_sm)+mapview(BA)
-
-# https://stackoverflow.com/questions/65498300/how-to-efficiently-create-linestrings-from-points
-# https://stackoverflow.com/questions/58150279/plotting-lines-between-two-sf-point-features-in-r
-```
-
-### Visualizing the terrain profile
-```{r raster-profile}
-# Create a terrain profile and plot it to check potential intervisibility
-testprofile <- rasterprofile(Y_elev,  m8007, m8346)
-testprofile <- rasterprofile(Y_elev,  m8007, m8345)
-testprofile <- rasterprofile(Y_elev,  st_coordinates(Yam_mnds[1,]), st_coordinates(Yam_mnds[333,]))
-
-# Plot
-plot(testprofile$z, type = "b"); 
-
-# create the connecting line between origin and destination points
-x = c(0,nrow(testprofile))
-y = testprofile$z[c(1,nrow(testprofile))]
-
-# Plot profile with start and end point elevation
-plot(testprofile$z, type = "l", main = "Terrain profile between mounds 8345 and 8346", 
-     ylab = "Elevation(m)", xlab = "Mound distance (*30m)"); 
-lines(x,y, col = "red", lwd = 2)
-
-```
-
-Some of the mounds (Drazhevo and 8346) can not see each other, because the one on top of the Zaichi Vrah is obscured by the hill and not aimed at the mounds to the SE.  Others with clear line of sight can see one another.
-Let's test the intervisibility between these three and other mounds in the surroundings from the Yambol Mounds dataset. We will use the viewTo() function and the starting coordinates of the three mounds.
-
-```{r view-to-8007, warning=FALSE}
-# First we need to convert the Yambol mounds to a matrix of coordinates
-coords <- data.frame(st_coordinates(Yam_mnds),h=Yam_mnds$HeightMax)
-missingHeight <- which(is.na(coords$h))
-mnd_missH <- Yam_mnds$TRAP[missingHeight]
-
-coords <- coords %>% 
-  filter(!is.na(h))
-coords_m <- as.matrix(coords)
-
-# viewTo() working with 3 points
-testview <- viewTo(Y_elev, m8007, rbind(m8346,m8345))
-
-# with all points (uncomment if you wish to regenerate!)
-# testview <- viewTo(Y_elev, m8007, coords_m,m8007[3], coords_m[,3])
-# length(testview)
-
-
-# # See which ones can see 8007
-# '%nin%' = Negate('%in%')
-# viewTo_8007 <- Yam_mnds %>% 
-#   filter(TRAP %nin% mnd_missH) %>%   # must first filter away missing heights as I did with coordinates
-#   filter(testview) # use the logical vector to filter the Yam_mnds rows
-
-# 289 mounds can see mound 8007
-# saveRDS(viewTo_8007, "../output_data/MoundsVisfrom8007.rds")
-viewTo_8007 <- readRDS("../output_data/MoundsVisfrom8007.rds")
-```
-
-View these 289 mounds visible from 8007
-```{r plot-visible}
-# Test linestring creation from one origin and multiple target points. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
-coords <- as.matrix(cbind(rep(m8007[1], 289),rep(m8007[2], 289), st_coordinates(viewTo_8007)))
-
-lines <-  st_sfc(
-     lapply(1:nrow(coords),
-           function(i){
-             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
-           }))
-
-st_crs(lines) <- st_crs(BA)
-
-library(mapview)
-library(leafsync)
-m1 <- mapview(lines) + mapview(viewTo_8007, cex = 4) + mapview(BA[3,], cex = 10)
-m2 <- mapview(viewTo_8007, zcol = "prom250mbuff")
-sync(m1,m2)
-```
-
-
-
-
-## Intervisibility of Bronze Age mounds in Yambol (not sure if needed)
-In this proof of concept we explore the visibility of BA mounds from other BA mounds, for simplicity's sake. 
-
-BA mounds comprise surveyed and excavated mounds ('bronze') and excavated prior to survey ('extrasf') supplied by Toshko.
-
-Excavated prior:
-Drazhevo - Height: 2.7 m; Diameter: 37.0 m; Land: pasture on the rocky area
-Straldzha - Height: 4.0 m; Diameter: 50.0 m; Land: wines and pasture
-Popovo - Height: 6.8 m; Diameter: 48.0 m; Land: wines and pasture
-
-8345 Mogila village - Height: 3.2 m; Diameter: 37.6 m; Land: pasture on the rocky area 
-
-
-```{r BA-faims, include = FALSE}
-# Filter out the BA mounds from the FAIMS data
-bronze <- c(6009,8007,6010,8345,8346,8357, 8502, 8351, 9257)
-BA <- Yam_mnds %>% 
-  filter(TRAP %in% bronze)
-
-# Add literature dimensions to mound 8345, which was excavated before survey 
-BA$DiameterMax[5] <- 37.5
-BA$HeightMax[5] <- 3.2
-
-```
-
-```{r BA-Todor, include = FALSE}
-# Add the few mounds excavated before TRAP coverage >> these should be pulled out of the AOR dataset to get the Height, Diameter and other dimensions..
-extras <- data.frame(place = c("Drazhevo", 
-                           "Straldzha",
-                           "Popovo"),
-                 Easting=c(455442,479522,479391),
-                 Northing=c(4710935,4715730,4668279),
-                 HeightMax=c(2.7,4.0,6.8),
-                 DiameterMax = c(37,50,48),
-                 LU_Around = c("Pasture","Perennial","Perennial"),
-                 Type = c("Burial Mound","Burial Mound","Burial Mound"),
-                 Source = c("Excavation","Excavation","Excavation"))
-extrasf <- st_as_sf(extras, coords =c("Easting", "Northing"), crs = 32635)
-
-```
-
-```{r BA-combo, include = FALSE}
-# Combine both BA datasets and spatialize
-library(plyr)
-BApoints <- rbind.fill(BA, extrasf)
-BAcoords <- rbind(st_coordinates(BA) ,st_coordinates(extrasf))
-BApoints <- cbind(BApoints, BAcoords)
-BApoints <- st_as_sf(BApoints, coords = c("X", "Y"), crs = 32635)
 ```
