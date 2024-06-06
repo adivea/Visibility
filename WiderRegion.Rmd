@@ -1,0 +1,115 @@
+---
+title: "Extended Area Mounds"
+author: "Adela Sobotkova"
+date: "2024-06-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+```
+
+## Load Mounds from Wider Area
+
+```{r}
+# rasters
+#YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
+Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
+
+# region admin
+region <- read_sf("data/YamRegion.shp")
+Y_buf25 <- st_buffer(region, 25000)
+
+# map mounds ~ 10,000 points
+m_all <- read_sf("data/MapMounds32635.shp")
+m_all %>% group_by(MpSymbl) %>% tally()
+
+# filter the most conservative symbol (sunburst) 4290 points
+mm <- m_all %>% 
+    filter(grepl("^Hairy brown", MpSymbl)) # deleting 'brown' gets all rayed symbols
+
+# intersect filtered sunbursts with region buffer
+mm_Yext <- st_intersection(mm, (Y_buf25$geometry %>% 
+  st_difference(region$geometry)))
+
+# are there duplicate IDs in the 1065 map mounds?
+mm_Yext %>% 
+  group_by(identfr) %>% 
+  count() %>% arrange(desc(n))
+
+# save intermediate products
+# st_write(mm_Yext[,c(7,10,11, 14,1)], "output_data/Y25_mapmounds.shp", overwrite = T)
+#st_write(Y_buf25, "data/Y_region_buf25k.shp")
+
+
+# Visualize additional mounds and their relief
+plot(Y_buf25$geometry, border = "red");plot(mm_Yext$geometry, add = T);plot(region$geometry, add =T, col = "green")
+
+plot(Y35, main = "Digitized map mounds within 25km buffer of Yambol Province");plot(region$geometry, add =T);plot(mm_Yext$geometry, add = T)
+
+
+```
+
+## Prepare Map Mounds for Intervisibility
+
+```{r -prep}
+# origin point coordinates and height
+Yam_mnds$HeightMax[is.na(Yam_mnds$HeightMax)] <- 0
+
+origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+
+# target points in map mounds
+
+target <- cbind(st_coordinates(mm_Yext), h = 2) 
+plot(Y35); plot(mm_Yext$geometry, add = T)
+
+class(origin)
+class(target)
+```
+
+## Activate the functions needed
+```{r}
+source("scripts/VisibilityFunctions.R")
+```
+
+## Parallelize!
+Parallelisation is much faster than loops but still takes ca 6-12 hours for the whole dataset of 1000 by 1000 mounds. Run if needed
+```{r auto-foreach, eval = FALSE}
+# install.packages("doParallel")
+# install.packages("foreach")
+library(foreach)
+library(doParallel)
+library(data.table)
+
+detectCores() # 22 as some are multi-threaded
+detectCores(logical = FALSE) # 16 real ones
+
+cl <- makeCluster(12) # keep 4 cores so screensaver can run on W11
+registerDoParallel(cl)
+
+# Start experiment
+dim(origin) 
+dim(target) 
+Y35
+
+# nesting both i and e with foreach 
+ie_table <- foreach (i= 1:2, # reduce the load instead of 1073 in nrow(origin)
+                     .combine = 'rbind',
+                     .packages = c("data.table", "raster")) %do% {  
+  print(i)
+  foreach( e= 1:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
+  print(e)
+  result = cansee(Y35, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result_row <- c(i,e, result)
+  }
+ # result_table <- rbind(result_table, result_row)
+}
+
+# Error Error in { : task 1 failed - "task 1 failed - "std::bad_alloc""
+dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
+saveRDS(ie_table, "../output_data/Yam_ext_mnds_intervis.rds")
+```
