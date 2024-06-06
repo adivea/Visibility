@@ -109,7 +109,9 @@ ie_table <- foreach (i= 1:2, # reduce the load instead of 1073 in nrow(origin)
  # result_table <- rbind(result_table, result_row)
 }
 
-# Error Error in { : task 1 failed - "task 1 failed - "std::bad_alloc""
+# with 2 examples: Error in { : 
+#  task 1 failed - "task 3 failed - "cannot allocate vector of size 396.4 Mb""
+# with 500 examples Error Error in { : task 1 failed - "task 1 failed - "std::bad_alloc""
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
 saveRDS(ie_table, "../output_data/Yam_ext_mnds_intervis.rds")
 ```
