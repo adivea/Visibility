@@ -28,9 +28,10 @@ library(mapview)
 ```
 
 ## Load 2009-2022 data
-```{r load-mounds}
-
+```{r load-data}
+# Terrain BOM
 Y_elev <- raster("data/large/Yelev32635.tif")
+plot(Y_elev)
 # Yambol mounds
 Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
 mapview(Yam_mnds, zcol = "Type")
