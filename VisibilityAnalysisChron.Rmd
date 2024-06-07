@@ -884,18 +884,55 @@ Yam_izv <- mnd_izv %>%
   filter(!is.na(Long)) %>% 
   st_as_sf(coords = c("Long", "Lat"), crs = 4326) %>% 
   filter(Region == "Yambol")
-unique(Yam_izv$MoundID) # 10 mounds
-Yam_izv$StartDate
 
-mapview(Yam_aor, zcol = "StartDate") + mapview(Yam_izv, zcol = "StartDate") +
+unique(Yam_izv$MoundID) # 10 mounds
+
+```
+
+```{r plot-chrono}
+Yam_aor %>% 
+   filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+  
+Yam_izv %>% 
+  filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+Yam_izv$StartDate
+Yam_izv$Enddate
+
+
+# which attributes overlap
+names <- names(Yam_aor)[which(names(Yam_aor)%in%names(Yam_izv))]
+
+all <- rbind(Yam_aor[names], Yam_izv[names])
+
+all %>% 
+  filter(!is.na(StartDate)) %>% # 295 graves
+  # distinct(MoundID)  #41 mounds
+  mapview(zcol = "StartDate")
+
+
+
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 funerary assemblages from 41 mounds")
+```
+
+```{r map-chrono}
+mapview(Yam_aor,zcol = "StartDate" ) + mapview(Yam_izv, zcol = "StartDate") + 
+  mapview(Yam_mnds, cex = 1)
 mapview(Yam_mnds %>% filter(prom250mbuff >75))
+
+mapview(all,zcol = "StartDate" ) +   mapview(Yam_mnds, cex = 1)
+mapview(all,zcol = "Enddate" ) +   mapview(Yam_mnds, cex = 1)
+
 ```
 
 
-
-
 ## Check raster:terrain results against the winners
-We have mound-centereed indeces of ruggedness and topographic prominence, which should align with the objective/dry measure of visibility above.
+We have mound-centered indeces of ruggedness and topographic prominence, which should align with the objective/dry measure of visibility above.
 The measures are at different scales. Prominence in 250m buffer specifies how big a fraction (in percentages) of the surrounding area is visible to a person on the mound.
 TPI is measured from on a scale from -3 to 2 , with most values between 0 and 1. TRI is between 0 and 4, with median at 1. Rough measure goes from 0 to 15, with mean at 3.7.
 ```{r}
@@ -906,7 +943,7 @@ summary(Yam_mnds[, c("prom250mbuff", "TPI", "TRI", "rough")])
 # prominence in 250m buffer
 hist(Yam_mnds$prom250mbuff)
 Yam_mnds %>% 
-  filter(prom250mbuff > 85) %>% 
+  filter(prom250mbuff > 95) %>% 
   mapview(zcol = "prom250mbuff") # 9412 not present!
 
 # TPI
