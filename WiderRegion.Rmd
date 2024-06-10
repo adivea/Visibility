@@ -77,7 +77,8 @@ plot(Y_buf25$geometry, border = "red");plot(mm_Yext$geometry, add = T);plot(regi
 
 plot(Y35, main = "Digitized map mounds within 25km buffer of Yambol Province");plot(region$geometry, add =T);plot(mm_Yext$geometry, add = T)
 
-
+mapview(Y35)+ mapview(mm_Yext)+mapview(region)
+hist(values(Y35))
 ```
 
 
@@ -88,29 +89,35 @@ Calculate intervisibility for origin mounds among those 5 km to the border and t
 
 ```{r}
 innerbuff <- st_buffer(region, -5000)
-plot(region$geometry);plot(innerbuff, add = T)
-#plot(st_intersection(Yam_mnds, innerbuff), add = T)
-plot(st_difference(Yam_mnds, innerbuff), add = T)
-
 edge5km_mounds <- st_difference(Yam_mnds, innerbuff)
+
+# SOUTHERN BORDER IS INTRACTABLE..so skipping mounds within 4500m of border 
+edge5km_mounds<- edge5km_mounds %>% 
+  filter(unclass(distBG) >4500) 
+
+plot(region$geometry);plot(innerbuff, add = T)
+plot(edge5km_mounds$geometry, add = T)
 
 ```
 
 ```{r inter-prep}
 # origin point coordinates and height
 Yam_mnds$HeightMax[is.na(Yam_mnds$HeightMax)] <- 0
-
 origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+
+# MUST HAVE NON-NA HEIGHT
+edge5km_mounds$HeightMax[is.na(edge5km_mounds$HeightMax)] <- 0
 origin <- cbind(st_coordinates(edge5km_mounds), h = edge5km_mounds$HeightMax)
 
 # target points in map mounds
-
 target <- cbind(st_coordinates(mm_Yext), h = 2) 
+#plot(Y35); plot(mm_Yext$geometry, add = T);plot(edge5km_mounds$geometry, add = T, col = "red")
 
-plot(Y35); plot(mm_Yext$geometry, add = T);plot(edge5km_mounds, add = T, col = "red")
 
 class(origin)
 class(target)
+
+rm(mm,m_all, innerbuff)
 ```
 
 
@@ -132,17 +139,23 @@ library(data.table)
 detectCores() # 22 as some are multi-threaded
 detectCores(logical = FALSE) # 16 real ones
 
-cl <- makeCluster(12) # keep 4 cores so screensaver can run on W11
+cl <- makeCluster(10) # keep 4 cores so screensaver can run on W11; lowering to 10
 registerDoParallel(cl)
+
+on.exit({
+  try({
+   cat("Attempting to stop cluster\n")
+   ?stopImplicitCluster()        # package: `doParallel`
+   })
+ })
 
 # Start experiment
 dim(origin) 
 dim(target) 
-Y35
 
-# FOR TESTING PURPOSES _ COMMENT OUT!
-origin <- origin[1:100,]
-target <- target[1:100,]  # works for smaller datasets! Halve the current size
+# FOR TESTING PURPOSES REDUCE THE SIZE!
+origin <- origin[1:20,] # 10, 100 out of 341
+#target <- target[1:600,]  # half of 1206 works for smaller datasets! Halve the current size
 
 # nesting both i and e with foreach 
 ie_table <- foreach (i= 1:nrow(origin), # reduce the load instead of 1073 in nrow(origin)
@@ -154,12 +167,40 @@ ie_table <- foreach (i= 1:nrow(origin), # reduce the load instead of 1073 in nro
   result <-  cansee(Y35, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
   result_row <- c(i,e, result)
   }
- # result_table <- rbind(result_table, result_row)
 }
+
+# tell R that we don't need the processes anymore
+stopCluster(cl)
+
 
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
 head(ie_table, n =20)
 
-saveRDS(ie_table, "output_data/Yam_1cext_mnds_intervis.rds")
+saveRDS(ie_table, "output_data/Yam_10ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
+rm(ie_table)
 
 ```
+
+```{r}
+res <- as_tibble(ie_table)
+res %>% 
+  filter(!is.na(V3))
+
+result_table <- res %>% 
+  rename(i = V1, e = V2, visibility = V3)
+result_table %>% 
+  filter(visibility ==1)
+
+result_table$TRAPorigin <- edge5km_mounds$TRAP[result_table$i]
+result_table$TRAPtarget <- mm_Yext$Id[result_table$e]
+
+result_table %>%  
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  left_join(edge5km_mounds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "n" , zcol = "HeightMax") +mapview(Yam_mnds,cex = 0.1) 
+  
+```
+
