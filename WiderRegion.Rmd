@@ -13,6 +13,15 @@ library(tidyverse)
 library(mapview)
 ```
 
+## Load Yambol mounds
+```{r}
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+Yam_mnds %>% 
+  group_by(Type) %>% 
+  tally()
+```
+
 ## Load Mounds from Wider Area
 
 ```{r}
@@ -32,17 +41,34 @@ m_all %>% group_by(MpSymbl) %>% tally()
 mm <- m_all %>% 
     filter(grepl("^Hairy brown", MpSymbl)) # deleting 'brown' gets all rayed symbols
 
+
+```
+
+### Northern map mounds Angel digitized in June 2024
+this concerns mounds north of Yambol - mostly in Stara Planina -  that fall within 25 km buffer of Yambol border 
+```{r}
+mm_a <- read_sf("../YambolMoundAnalysis2023/data/MapMoundsA32635.geojson")
+mm_a$Notes <- ""
+mm <- mm %>% 
+  rename(Id =identfr, createdBy=cretdBy, createdAt = FtrTmst,Latitude = Latitud, Longitude = Longitd, MapSymbol = MpSymbl, Notes = Note) %>% 
+  dplyr::select(Id, createdBy, createdAt, Latitude, Longitude, MapSymbol, Notes) %>% 
+  rbind(mm_a)
+
+```
+
+### Intersect map mounds with 25 km buffer of Yambol region
+```{r}
 # intersect filtered sunbursts with region buffer
 mm_Yext <- st_intersection(mm, (Y_buf25$geometry %>% 
   st_difference(region$geometry)))
 
 # are there duplicate IDs in the 1065 map mounds?
 mm_Yext %>% 
-  group_by(identfr) %>% 
+  group_by(Id) %>% 
   count() %>% arrange(desc(n))
 
 # save intermediate products
-# st_write(mm_Yext[,c(7,10,11, 14,1)], "output_data/Y25_mapmounds.shp", overwrite = T)
+st_write(mm_Yext, "output_data/Y25_mapmounds.shp", append = F)
 #st_write(Y_buf25, "data/Y_region_buf25k.shp")
 
 
@@ -54,22 +80,40 @@ plot(Y35, main = "Digitized map mounds within 25km buffer of Yambol Province");p
 
 ```
 
+
 ## Prepare Map Mounds for Intervisibility
 
-```{r -prep}
+### Focus on mounds on edges
+Calculate intervisibility for origin mounds among those 5 km to the border and the mapped mound and then add this result to the current intervisibility table. How many mounds outside Yambol can these mounds see?
+
+```{r}
+innerbuff <- st_buffer(region, -5000)
+plot(region$geometry);plot(innerbuff, add = T)
+#plot(st_intersection(Yam_mnds, innerbuff), add = T)
+plot(st_difference(Yam_mnds, innerbuff), add = T)
+
+edge5km_mounds <- st_difference(Yam_mnds, innerbuff)
+
+```
+
+```{r inter-prep}
 # origin point coordinates and height
 Yam_mnds$HeightMax[is.na(Yam_mnds$HeightMax)] <- 0
 
 origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+origin <- cbind(st_coordinates(edge5km_mounds), h = edge5km_mounds$HeightMax)
 
 # target points in map mounds
 
 target <- cbind(st_coordinates(mm_Yext), h = 2) 
-plot(Y35); plot(mm_Yext$geometry, add = T)
+
+plot(Y35); plot(mm_Yext$geometry, add = T);plot(edge5km_mounds, add = T, col = "red")
 
 class(origin)
 class(target)
 ```
+
+
 
 ## Activate the functions needed
 ```{r}
@@ -96,22 +140,26 @@ dim(origin)
 dim(target) 
 Y35
 
+# FOR TESTING PURPOSES _ COMMENT OUT!
+origin <- origin[1:100,]
+target <- target[1:100,]  # works for smaller datasets! Halve the current size
+
 # nesting both i and e with foreach 
-ie_table <- foreach (i= 1:2, # reduce the load instead of 1073 in nrow(origin)
+ie_table <- foreach (i= 1:nrow(origin), # reduce the load instead of 1073 in nrow(origin)
                      .combine = 'rbind',
                      .packages = c("data.table", "raster")) %do% {  
   print(i)
   foreach( e= 1:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
   print(e)
-  result = cansee(Y35, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result <-  cansee(Y35, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
   result_row <- c(i,e, result)
   }
  # result_table <- rbind(result_table, result_row)
 }
 
-# with 2 examples: Error in { : 
-#  task 1 failed - "task 3 failed - "cannot allocate vector of size 396.4 Mb""
-# with 500 examples Error Error in { : task 1 failed - "task 1 failed - "std::bad_alloc""
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
-saveRDS(ie_table, "../output_data/Yam_ext_mnds_intervis.rds")
+head(ie_table, n =20)
+
+saveRDS(ie_table, "output_data/Yam_1cext_mnds_intervis.rds")
+
 ```
