@@ -116,6 +116,9 @@ target <- cbind(st_coordinates(mm_Yext), h = 2)
 
 class(origin)
 class(target)
+# Start experiment
+dim(origin) 
+dim(target) 
 
 rm(mm,m_all, innerbuff)
 ```
@@ -149,13 +152,16 @@ on.exit({
    })
  })
 
+
+# FOR TESTING PURPOSES REDUCE THE SIZE!
+#origin <- origin[1:100,] # 10, 100 out of 341
+origin <- origin[101:341,] # 10, 100 out of 341
+#target <- target[1066:1206,]  # half of 1206 works for smaller datasets! Halve the current size
+target <- target
+
 # Start experiment
 dim(origin) 
 dim(target) 
-
-# FOR TESTING PURPOSES REDUCE THE SIZE!
-origin <- origin[1:20,] # 10, 100 out of 341
-#target <- target[1:600,]  # half of 1206 works for smaller datasets! Halve the current size
 
 # nesting both i and e with foreach 
 ie_table <- foreach (i= 1:nrow(origin), # reduce the load instead of 1073 in nrow(origin)
@@ -176,31 +182,88 @@ stopCluster(cl)
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
 head(ie_table, n =20)
 
-saveRDS(ie_table, "output_data/Yam_10ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
+saveRDS(ie_table, "output_data/Yam_241_ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
 rm(ie_table)
 
 ```
-
+### Combine the results from downscaled calculation
 ```{r}
-res <- as_tibble(ie_table)
-res %>% 
-  filter(!is.na(V3))
+ie <- readRDS("output_data/Yam_100ext_mnds_intervis.rds") # first 100 mounds of origin and 1065 of target
+ie_table # first 100 mounds of origin and remaining 141 mounds of target
+res_one <- as_tibble(ie)
+res_two <- as_tibble(ie_table)
 
-result_table <- res %>% 
-  rename(i = V1, e = V2, visibility = V3)
+tail(res_one)
+tail(res_two)
+
+# update and rename values in res_two$V1 to 100-341
+res_two$V1 <-res_two$V1 + 100 
+
+# rename values inside res_two$V2 and merge with res_one
+
+res_two <- res_two %>% 
+   rename(i = V1, e=V2, visibility = V3)
+
+res_two$TRAPtarget <- mm_Yext$Id[res_two$e]
+res_two$TRAPorigin <- edge5km_mounds$TRAP[res_two$i]
+
+
+# initial res_one processing, uncomment if you are recreating from scratch
+# result_table <- res_one %>% 
+#   rename(target = V2)  %>% 
+#   rbind(res_two[,-2]) %>% 
+#   rename(i = V1, e=target, visibility = V3)
+  
+# combine the two results: (1-100, and 101 - 341) res_one and res_two
+result_table <- res_one %>%
+  rbind(res_two)
+
 result_table %>% 
   filter(visibility ==1)
 
-result_table$TRAPorigin <- edge5km_mounds$TRAP[result_table$i]
-result_table$TRAPtarget <- mm_Yext$Id[result_table$e]
+# result_table$TRAPorigin <- edge5km_mounds$TRAP[result_table$i]
+# result_table$TRAPtarget <- mm_Yext$Id[result_table$e]
 
 result_table %>%  
   group_by(TRAPorigin) %>% 
   tally(visibility) %>% 
   arrange(desc(n)) %>% 
+#  slice(1:10) %>% 
   left_join(edge5km_mounds, by = c("TRAPorigin"="TRAP")) %>%
   st_as_sf(crs = 32635) %>% 
   mapview(cex = "n" , zcol = "HeightMax") +mapview(Yam_mnds,cex = 0.1) 
-  
+
+saveRDS(result_table, "output_data/Yam_ext_mnds_intervis.rds") # all 341 border mounds intervisibility to 25km buffer 1206 external mounds
+
+```
+ A lovely  map of the true visibility of border mounds, when looking 'outside' the region!
+ 
+```{r}
+Y_out <- readRDS("output_data/Yam_ext_mnds_intervis.rds")
+ext_vis_sorted <- Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) 
+ext_vis_sorted 
+```
+New winners in the border region are `head(ext_vis_sorted$TRAPorigin, 10)` with the first five seeing additional 100 mounds
+
+Adding up these out-of-region visibilities, the final visibility for Yambol mounds is an aggregate of the two measures.
+
+
+### Final visibility
+```{r in_ext-vis}
+Y_in <- readRDS("output_data/Yam_mnds_intervis.rds")
+Y_vis <- Y_in %>% rbind(Y_out)
+all_vis_sorted <- Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) 
+all_vis_sorted %>% 
+  mutate(log_vis = log10(n)) %>% 
+  slice(1:100) %>% 
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "log_vis" , zcol = "n") + mapview(Yam_mnds,cex = 0.1) + mapview(mm_Yext, cex = 0.1) + mapview(region, alpha = 1)
 ```
 
