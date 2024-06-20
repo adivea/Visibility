@@ -236,7 +236,7 @@ result_table %>%
 saveRDS(result_table, "output_data/Yam_ext_mnds_intervis.rds") # all 341 border mounds intervisibility to 25km buffer 1206 external mounds
 
 ```
- A lovely  map of the true visibility of border mounds, when looking 'outside' the region!
+ A lovely  map of the true visibility of border mounds, when looking 'outside' the region! THe most prominent increase in intervisibility is in the very western tip of mounds and in southeast corner of the region. This way we are working with the true intervisibility. Previous winners still rule, because they have the largest viewshed being on SvIlijski vuzvyshennia, unobsured by Bakadzhitsite or Stara Planina (like RM mounds below the mnts), and attest to the fact that EBA people were selective and were encompassing the landscape!
  
 ```{r}
 Y_out <- readRDS("output_data/Yam_ext_mnds_intervis.rds")
@@ -251,14 +251,34 @@ New winners in the border region are `head(ext_vis_sorted$TRAPorigin, 10)` with 
 Adding up these out-of-region visibilities, the final visibility for Yambol mounds is an aggregate of the two measures.
 
 
-### Final visibility
+## Final visibility review
 ```{r in_ext-vis}
 Y_in <- readRDS("output_data/Yam_mnds_intervis.rds")
 Y_vis <- Y_in %>% rbind(Y_out)
 all_vis_sorted <- Y_vis %>% 
   group_by(TRAPorigin) %>% 
   tally(visibility) %>% 
-  arrange(desc(n)) 
+  arrange(desc(n))
+
+# the winners of outside-looking mounds
+Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> outside10
+Y_in %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> inside10
+outside10[which(outside10%in%inside10)]
+
+Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))%>% slice(1:10) %>% pull(TRAPorigin) -> all10
+
+outside10[which(outside10%in%inside10)]
+all10[all10%in%outside10]
+
 all_vis_sorted %>% 
   mutate(log_vis = log10(n)) %>% 
   slice(1:100) %>% 
@@ -267,3 +287,4 @@ all_vis_sorted %>%
   mapview(cex = "log_vis" , zcol = "n") + mapview(Yam_mnds,cex = 0.1) + mapview(mm_Yext, cex = 0.1) + mapview(region, alpha = 1)
 ```
 
+And here is a map with 100 mounds inside Yambol that can see the most mounds inside and within a buffer of 25km outside the region

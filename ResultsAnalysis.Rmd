@@ -1,0 +1,96 @@
+---
+title: "Intervisibility Assessment"
+output: html_document
+date: "2024-06-20"
+---
+## Purpose and prerequisites
+This script assesses  intervisibility (line of sight) results, starting here with burial mounds in the Yambol Region within ASTER elevation raster (30m spatial resolution) looking inside and outside the region. 
+
+This markdown guides you to: 
+
+1. Visualize intervisibility for calculated features (here: mounds in Yambol). To visualize, you can skip directly to section "Visualizing Intervisibility".
+3. TBD: intervisibility between mounds and settlements , started but needs completion
+
+The script basically works, but depends on the datasetes
+
+The proof of concept is done on BA mounds and to replicate it you might need: 
+- to run 09 BA mounds to have the necessary libraries and digital objects
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+
+```
+
+## Data
+
+```{r}
+#YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
+Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
+
+# region admin
+region <- read_sf("data/YamRegion.shp")
+
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+mm_Yext <- read_sf("output_data/Y25_mapmounds.shp")
+
+# Intervisibility
+Y_in <- readRDS("output_data/Yam_mnds_intervis.rds")
+Y_out <- readRDS("output_data/Yam_ext_mnds_intervis.rds")
+```
+
+## Final visibility review
+```{r in_ext-vis}
+Y_vis <- Y_in %>% rbind(Y_out)
+all_vis_sorted <- Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+
+# the winners of outside-looking mounds
+Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> outside10
+Y_in %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> inside10
+outside10[which(outside10%in%inside10)]
+
+Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))%>% slice(1:10) %>% pull(TRAPorigin) -> all10
+
+outside10[which(outside10%in%inside10)]
+all10[all10%in%outside10]
+
+
+```
+## Tables
+
+
+```{r}
+Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% pull(n) %>% hist(main = "Number of intervisible mounds")
+
+```
+
+## Maps
+```{r}
+all_vis_sorted %>% 
+  mutate(log_vis = log10(n)) %>% 
+  slice(1:100) %>% 
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "log_vis" , zcol = "n") + mapview(Yam_mnds,cex = 0.1) + mapview(mm_Yext, cex = 0.1) + mapview(region, alpha = 1)
+```
+
