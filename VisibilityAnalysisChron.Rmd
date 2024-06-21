@@ -321,6 +321,11 @@ veg10_table <- foreach (i= 1:nrow(origin), .combine = 'rbind',.packages = c("dat
   }
  # result_table <- rbind(result_table, result_row)
 }
+
+veg10_table <- veg10_table %>%
+  as_tibble() %>% 
+  rename(i = V1, e = V2, visibility = V3)
+
 veg10_table$TRAPorigin <- Yam_mnds$TRAP[veg10_table$i]
 veg10_table$TRAPtarget <- Yam_mnds$TRAP[veg10_table$e]
 

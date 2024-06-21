@@ -26,7 +26,7 @@ library(mapview)
 
 ```
 
-## Data
+## Load Data
 
 ```{r}
 #YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
@@ -73,8 +73,9 @@ all10[all10%in%outside10]
 
 
 ```
-## Tables
 
+
+## Tables
 
 ```{r}
 Y_out %>% 
@@ -83,6 +84,70 @@ Y_out %>%
   arrange(desc(n)) %>% pull(n) %>% hist(main = "Number of intervisible mounds")
 
 ```
+## Histograms
+
+### Simple of mounds seen, totals and log
+```{r}
+
+Y_vis %>%
+group_by(TRAPorigin) %>%
+tally(visibility) %>%
+arrange(desc(n)) %>%
+ggplot()+
+geom_histogram( aes(x = n)) +
+theme_bw()+
+labs( x = "Number of seen mounds ")
+
+Y_vis %>%
+group_by(TRAPorigin) %>%
+tally(visibility) %>%
+arrange(desc(n)) %>%
+mutate(n_log = log10(n)) %>%
+ggplot()+
+geom_histogram( aes(x = n_log)) +
+theme_bw()+
+labs( x = "Number of seen mounds (log10)")
+
+
+```
+
+### Classified in intervisibility bins
+
+While I can cacluate how many mounds can each mound see (in theory), it's also good to assess mound belonging into one of three logarithmic classes of intervisiblity, seeing 1 to 10 mounds, 10 to 100 mounds and 100 to 1000 mounds. And eventually assess how membership in these classes changes if we use vegetation models.
+```{r}
+# histogram
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n)) %>%
+  mutate(n_log = log10(n)) %>%
+  mutate(n_class = case_when(n_log < 1 ~ "1 to 10",
+                              n_log < 2 ~ "10 to 100",
+                              n_log < 3 ~ "100 to 1000")) %>%
+  ggplot() +
+  geom_histogram(aes(x = n_class), stat="count") +
+  theme_bw()+
+  labs(x = "How many mounds can be seen from this location?")  # add text to the columns?
+
+# count the intervisibility class contents 
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n)) %>%
+  mutate(n_log = log10(n)) %>%
+  mutate(n_class = case_when(n_log < 1 ~ "1 to 10",
+                            n_log < 2 ~ "10 to 100",
+                            n_log < 3 ~ "100 to 1000")) %>%
+  group_by(n_class) %>%
+  tally()
+
+# count individual mound intervisibility
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n))
+```
+
 
 ## Maps
 ```{r}
@@ -93,4 +158,61 @@ all_vis_sorted %>%
   st_as_sf(crs = 32635) %>% 
   mapview(cex = "log_vis" , zcol = "n") + mapview(Yam_mnds,cex = 0.1) + mapview(mm_Yext, cex = 0.1) + mapview(region, alpha = 1)
 ```
+
+
+## Vegatation models and Intervisibility 
+
+### model with 10m vegetation
+Let's explore what the random injection of 10m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
+
+```{r results-test-10}
+# Check the results of the initial intervisibility run
+result_table10 <- readRDS("output_data/veg10los.rds")
+vis10veg_sorted <-result_table10 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+vis10veg_sorted
+
+```
+
+
+### model with 0-20m vegetation
+Let's explore what the random injection of 0-20m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
+
+```{r results-test-20}
+# Check the results of the initial intervisibility run
+result_table20 <- readRDS("output_data/veg20grad_los.rds")
+vis20veg_sorted <-result_table20 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+vis20veg_sorted
+```
+
+### Assessing decline in field of view with vegetation
+```{r}
+intervis <- all_vis_sorted %>% 
+  full_join(vis10veg_sorted, by = "TRAPorigin") %>% 
+  full_join(vis20veg_sorted, by = "TRAPorigin") %>% 
+  rename(vis_max = n.x, vis_10 = n.y, vis_20 = n)
+
+intervis %>% 
+  arrange(desc(vis_max))
+
+intervis %>% 
+  arrange(desc(vis_10))
+  
+
+intervis %>% 
+  mutate(decline10 = round(100-(vis_10/vis_max*100),2),
+         decline20 = round(100-(vis_20/vis_max*100),2), 
+         diff = decline10-decline20) %>% 
+  #filter(decline10>90)  # 418 mounds lose visibility if in veg 10 model
+  filter(decline20>90) # 206 mounds lose visibility if in veg 20 model
+         # avgdec10 = mean(decline10),65%
+         # avgdec20 = mean(decline20)) 60%
+```
+
+## Factoring vegetation models into intervisibility class membership
 
