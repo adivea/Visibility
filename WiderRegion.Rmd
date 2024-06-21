@@ -277,7 +277,7 @@ Y_vis %>%
   arrange(desc(n))%>% slice(1:10) %>% pull(TRAPorigin) -> all10
 
 outside10[which(outside10%in%inside10)]
-all10[all10%in%outside10]
+all10[all10%in%inside10]
 
 all_vis_sorted %>% 
   mutate(log_vis = log10(n)) %>% 

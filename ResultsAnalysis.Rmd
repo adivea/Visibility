@@ -197,12 +197,16 @@ intervis <- all_vis_sorted %>%
   full_join(vis20veg_sorted, by = "TRAPorigin") %>% 
   rename(vis_max = n.x, vis_10 = n.y, vis_20 = n)
 
-intervis %>% 
-  arrange(desc(vis_max))
+top10 <- intervis %>% 
+  arrange(desc(vis_max)) %>% slice(1:10) %>% pull(TRAPorigin)
 
-intervis %>% 
-  arrange(desc(vis_10))
+top10in10 <- intervis %>% 
+  arrange(desc(vis_10)) %>% slice(1:10) %>% pull(TRAPorigin)
+top10[which(top10%in%top10in10)]
   
+top10in20 <- intervis %>% 
+  arrange(desc(vis_20)) %>% slice(1:10) %>% pull(TRAPorigin)
+top10[which(top10%in%top10in10)] %in% top10[which(top10%in%top10in20)]
 
 intervis %>% 
   mutate(decline10 = round(100-(vis_10/vis_max*100),2),
