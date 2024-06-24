@@ -124,11 +124,16 @@ dev.off()
 ### Visibility lines for 8007
 ```{r linestrings-8007}
 # Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
-
+visiblefrom8007 <- res_two %>% 
+  filter(visibility == 1) %>% 
+  pull(TRAPtarget)
 mostvisiblemnd <- visiblefrom8007 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
 
 coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
                 as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
+                as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
+coords <- rbind(coords, coords_out)
 
 
 lines_8007 <-  st_sfc(
@@ -153,7 +158,7 @@ mapview(lines_8007)+
 ```{r}
 
 tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(Y35, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
 plot(BG$geometry, add = T, lwd = 2); plot(lines_8007, add =T)
 dev.off()

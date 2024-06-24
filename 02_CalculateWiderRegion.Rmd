@@ -113,6 +113,9 @@ origin <- cbind(st_coordinates(edge5km_mounds), h = edge5km_mounds$HeightMax)
 target <- cbind(st_coordinates(mm_Yext), h = 2) 
 #plot(Y35); plot(mm_Yext$geometry, add = T);plot(edge5km_mounds$geometry, add = T, col = "red")
 
+# target points for 8007, first inside then outside mounds
+target2 <- rbind(cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax), target) 
+
 
 class(origin)
 class(target)
@@ -142,7 +145,7 @@ library(data.table)
 detectCores() # 22 as some are multi-threaded
 detectCores(logical = FALSE) # 16 real ones
 
-cl <- makeCluster(10) # keep 4 cores so screensaver can run on W11; lowering to 10
+cl <- makeCluster(4) # keep 4 cores so screensaver can run on W11; lowering to 10
 registerDoParallel(cl)
 
 on.exit({
@@ -156,8 +159,14 @@ on.exit({
 # FOR TESTING PURPOSES REDUCE THE SIZE!
 #origin <- origin[1:100,] # 10, 100 out of 341
 origin <- origin[101:341,] # 10, 100 out of 341
+origin <- cbind(Yam_mnds %>% 
+  filter(TRAP == 8007) %>% 
+  select(TRAP, HeightMax) %>% 
+  st_coordinates(), h = 4.5)
+
 #target <- target[1066:1206,]  # half of 1206 works for smaller datasets! Halve the current size
 target <- target
+target <- target2 # for 8007 calculation
 
 # Start experiment
 dim(origin) 
@@ -181,7 +190,7 @@ stopCluster(cl)
 
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
 head(ie_table, n =20)
-
+saveRDS(ie_table, "output_data/Y8007_intervis.rds")
 saveRDS(ie_table, "output_data/Yam_241_ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
 rm(ie_table)
 
@@ -207,6 +216,9 @@ res_two <- res_two %>%
 res_two$TRAPtarget <- mm_Yext$Id[res_two$e]
 res_two$TRAPorigin <- edge5km_mounds$TRAP[res_two$i]
 
+# for 8007 only 
+res_two$TRAPtarget <- c(Yam_mnds$TRAP, mm_Yext$Id)
+res_two$TRAPorigin <- 8007
 
 # initial res_one processing, uncomment if you are recreating from scratch
 # result_table <- res_one %>% 
