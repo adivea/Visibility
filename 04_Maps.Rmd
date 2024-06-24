@@ -1,0 +1,160 @@
+---
+title: "Maps"
+output: html_document
+date: "2024-06-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Maps
+```{r}
+path <- "C:/Users/au616760/OneDrive - Aarhus universitet/Documents/TRAP_Oxbow"
+# A bit of local infrastructure and topography
+Y_towns <- read_sf(paste0(path, "/TopoData/Modern_settlements_Yambol_TRAP.shp"))
+Y_rivers <- read_sf(paste0(path, "/TopoData/Rivers_Yambol_TRAP.shp"))
+Y_roads <- read_sf(paste0(path, "/TopoData/Modern_roads_Yambol_TRAP.shp"))
+BG <- read_sf("data/Bulgaria_Border.shp")
+
+Y_city <- Y_towns %>% 
+  filter(Name_en == "Yambol")
+
+# Yambol surveys
+library(terra)
+Y <- rast("data/large/Y_elev_ext.tif")
+```
+
+
+# Vectorize DEM 
+```{r}
+con <- as.contour(dem_Y5)
+plot(dem_Y5, axes = F)
+plot(con, add = T)
+
+contours <- con %>% 
+  st_as_sf()
+# st_write(contours, "output_data/Yam_contours.geojson")
+
+
+tiff("figures/01.tiff", width = 6, height = 7, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+# plot(Y_rivers, col= "blue", add =T)
+plot(BG$geometry, add = T, lwd = 2)
+dev.off()
+```
+
+
+```{r}
+# Open a TIFF device
+tiff("figures/elevation_plot.tiff", width = 8, height = 6, units = "in", res = 300)
+
+# Create the plot
+plot(dem_Y5, col = grey.colors(256, start = 1, end = 0))
+
+# Close the device to save the plot
+dev.off()
+```
+
+## MOST Intervisible 
+
+```{r}
+# group by viewpoint, join to spatial points and plot on a map
+library(mapview)
+
+Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:50) %>% 
+  mutate(n_log = log10(n)) %>% 
+  # join the summarized dataframe of 25 most visible mounds to mound spatial points
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  # activate the geometry column with proper CRS
+  st_as_sf(crs = 32635) %>% 
+  # plot the 25 most visible mounds, varying their radius by number of visible features from this location and varying color by mound height
+  mapview(cex = "n" , zcol = "n_log") + 
+  # show other mounds in the background as small dots
+  mapview(Yam_mnds,cex = 0.1) 
+  # differentiate mounds visible from 9412 (the most visible single features)
+  #mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9412), cex = 1)
+
+mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
+```
+
+### Visibility lines for 9412
+```{r linestrings-9412}
+# Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
+
+mostvisiblemnd <- visiblefrom9412 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
+                as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
+coords <- rbind(coords, coords_out)
+
+lines_sm <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_sm) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_sm)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+
+# https://stackoverflow.com/questions/65498300/how-to-efficiently-create-linestrings-from-points
+# https://stackoverflow.com/questions/58150279/plotting-lines-between-two-sf-point-features-in-r
+
+```
+
+
+```{r}
+
+tiff("figures/04.tiff", width = 10, height = 10, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+# plot(Y_rivers, col= "blue", add =T)
+plot(BG$geometry, add = T, lwd = 2); plot(lines_sm, add =T)
+dev.off()
+```
+### Visibility lines for 8007
+```{r linestrings-8007}
+# Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
+
+mostvisiblemnd <- visiblefrom8007 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+
+
+lines_8007 <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_8007) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_8007)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+
+# https://stackoverflow.com/questions/65498300/how-to-efficiently-create-linestrings-from-points
+# https://stackoverflow.com/questions/58150279/plotting-lines-between-two-sf-point-features-in-r
+
+```
+
+
+```{r}
+
+tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+# plot(Y_rivers, col= "blue", add =T)
+plot(BG$geometry, add = T, lwd = 2); plot(lines_8007, add =T)
+dev.off()
+```

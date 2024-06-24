@@ -1,0 +1,309 @@
+---
+title: "Intervisibility Assessment"
+output: html_document
+date: "2024-06-20"
+---
+## Purpose and prerequisites
+This script assesses  intervisibility (line of sight) results, starting here with burial mounds in the Yambol Region within ASTER elevation raster (30m spatial resolution) looking inside and outside the region. 
+
+This markdown guides you to: 
+
+1. Visualize intervisibility for calculated features (here: mounds in Yambol). To visualize, you can skip directly to section "Visualizing Intervisibility".
+3. TBD: intervisibility between mounds and settlements , started but needs completion
+
+The script basically works, but depends on the datasetes
+
+The proof of concept is done on BA mounds and to replicate it you might need: 
+- to run 09 BA mounds to have the necessary libraries and digital objects
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+
+```
+
+## Load Data
+
+```{r}
+#YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
+Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
+
+# region admin
+region <- read_sf("data/YamRegion.shp")
+
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+mm_Yext <- read_sf("output_data/Y25_mapmounds.shp")
+
+# Intervisibility
+Y_in <- readRDS("output_data/Yam_mnds_intervis.rds")
+Y_out <- readRDS("output_data/Yam_ext_mnds_intervis.rds")
+```
+
+## Final visibility review
+```{r in_ext-vis}
+Y_vis <- Y_in %>% rbind(Y_out)
+all_vis_sorted <- Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+
+# the winners of outside-inside looking mounds
+Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> outside10
+Y_in %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% slice(1:10) %>% pull(TRAPorigin) -> inside10
+outside10[which(outside10%in%inside10)]
+
+Y_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))%>% slice(1:10) %>% pull(TRAPorigin) -> all10
+
+outside10[which(outside10%in%inside10)]
+all10[all10%in%outside10]
+
+Y_vis %>% 
+  filter(TRAPorigin == 9412, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412
+
+Y_vis %>% 
+  filter(TRAPorigin == 8007, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom8007
+
+```
+
+
+## Tables
+
+```{r}
+Y_out %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% pull(n) %>% hist(main = "Number of intervisible mounds")
+
+```
+## Histograms
+
+### Simple of mounds seen, totals and log
+```{r}
+
+Y_vis %>%
+group_by(TRAPorigin) %>%
+tally(visibility) %>%
+arrange(desc(n)) %>%
+ggplot()+
+geom_histogram( aes(x = n)) +
+theme_bw()+
+labs( x = "Number of seen mounds ")
+
+Y_vis %>%
+group_by(TRAPorigin) %>%
+tally(visibility) %>%
+arrange(desc(n)) %>%
+mutate(n_log = log10(n)) %>%
+ggplot()+
+geom_histogram( aes(x = n_log)) +
+theme_bw()+
+labs( x = "Number of seen mounds (log10)")
+
+
+```
+
+### Classified in intervisibility bins
+
+While I can cacluate how many mounds can each mound see (in theory), it's also good to assess mound belonging into one of three logarithmic classes of intervisiblity, seeing 1 to 10 mounds, 10 to 100 mounds and 100 to 1000 mounds. And eventually assess how membership in these classes changes if we use vegetation models.
+```{r}
+# histogram
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n)) %>%
+  mutate(n_log = log10(n)) %>%
+  mutate(n_class = case_when(n_log < 1 ~ "1 to 10",
+                              n_log < 2 ~ "10 to 100",
+                              n_log < 3 ~ "100 to 1000")) %>%
+  ggplot() +
+  geom_histogram(aes(x = n_class), stat="count") +
+  theme_bw()+
+  labs(x = "How many mounds can be seen from this location?")  # add text to the columns?
+
+# count the intervisibility class contents 
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n)) %>%
+  mutate(n_log = log10(n)) %>%
+  mutate(n_class = case_when(n_log < 1 ~ "1 to 10",
+                            n_log < 2 ~ "10 to 100",
+                            n_log < 3 ~ "100 to 1000")) %>%
+  group_by(n_class) %>%
+  tally()
+
+# count individual mound intervisibility
+Y_vis %>%
+  group_by(TRAPorigin) %>%
+  tally(visibility) %>%
+  arrange(desc(n))
+```
+
+
+## Maps
+```{r}
+all_vis_sorted %>% 
+  mutate(log_vis = log10(n)) %>% 
+  slice(1:100) %>% 
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "log_vis" , zcol = "n") + mapview(Yam_mnds,cex = 0.1) + mapview(mm_Yext, cex = 0.1) + mapview(region, alpha = 1)
+
+
+mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
+mapview(Yam_mnds[Yam_mnds$TRAP %in% all10,])
+```
+
+
+## Vegetation models and Intervisibility 
+
+### model with 10m vegetation
+Let's explore what the random injection of 10m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
+
+```{r results-test-10}
+# Check the results of the initial intervisibility run
+result_table10 <- readRDS("output_data/veg10los.rds")
+vis10veg_sorted <-result_table10 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+vis10veg_sorted
+
+```
+
+
+### model with 0-20m vegetation
+Let's explore what the random injection of 0-20m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
+
+```{r results-test-20}
+# Check the results of the initial intervisibility run
+result_table20 <- readRDS("output_data/veg20grad_los.rds")
+vis20veg_sorted <-result_table20 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n))
+vis20veg_sorted
+```
+
+
+### Assessing decline in field of view with vegetation
+```{r}
+intervis <- all_vis_sorted %>% 
+  full_join(vis10veg_sorted, by = "TRAPorigin") %>% 
+  full_join(vis20veg_sorted, by = "TRAPorigin") %>% 
+  rename(vis_max = n.x, vis_10 = n.y, vis_20 = n)
+
+top10 <- intervis %>% 
+  arrange(desc(vis_max)) %>% slice(1:10) %>% pull(TRAPorigin)
+
+top10in10 <- intervis %>% 
+  arrange(desc(vis_10)) %>% slice(1:10) %>% pull(TRAPorigin)
+top10[which(top10%in%top10in10)]
+  
+top10in20 <- intervis %>% 
+  arrange(desc(vis_20)) %>% slice(1:10) %>% pull(TRAPorigin)
+top10[which(top10%in%top10in10)] %in% top10[which(top10%in%top10in20)]
+
+intervis %>% 
+  mutate(decline10 = round(100-(vis_10/vis_max*100),2),
+         decline20 = round(100-(vis_20/vis_max*100),2), 
+         diff = decline10-decline20) %>% 
+  #filter(decline10>90)  # 418 mounds lose visibility if in veg 10 model
+  filter(decline20>90) # 206 mounds lose visibility if in veg 20 model
+         # avgdec10 = mean(decline10),65%
+         # avgdec20 = mean(decline20)) 60%
+```
+###  Factoring vegetation models into intervisibility class membership
+
+Let's lengthen the dataset and review changes
+```{r}
+intervis <- intervis %>%
+  mutate(max_log = log10(vis_max),
+         v10_log = log10(vis_10),
+         v20_log = log10(vis_20)) %>%
+  mutate(max_class = case_when(max_log < 1 ~ "1 to 10",
+                              max_log < 2 ~ "10 to 100",
+                              max_log < 3 ~ "100 to 1000"),
+         v10_class = case_when(v10_log < 1 ~ "1 to 10",
+                              v10_log < 2 ~ "10 to 100",
+                              v10_log < 3 ~ "100 to 1000"),
+         v20_class = case_when(v20_log < 1 ~ "1 to 10",
+                              v20_log < 2 ~ "10 to 100",
+                              v20_log < 3 ~ "100 to 1000")) 
+
+intervis %>%
+  pivot_longer(cols = max_class:v20_class, 
+               names_to = "class_type",
+                 values_to = "class") %>%
+  group_by(class_type,class) %>% 
+  summarize(n = n(), 
+            percent = round(n / 1073 *100, 1)) 
+  
+
+
+```
+## Histograms factoring vegetation models into intervisibility 
+```{r}
+# stacked histograms
+intervis %>%
+  #select(TRAPorigin, vis_max, vis_10, vis_20, max_class, v10_class, v20_class)
+  pivot_longer(cols = max_class:v20_class, 
+               names_to = "class_type",
+                 values_to = "class") %>% 
+  ggplot() +
+  geom_histogram(aes(x = class,  fill = class_type), stat="count") +
+  theme_bw()+
+  labs(x = "How many mounds can be seen from this location?")  # add text to the columns?
+
+# dodged histograms
+intervis %>%
+  #select(TRAPorigin, vis_max, vis_10, vis_20, max_class, v10_class, v20_class)
+  pivot_longer(cols = max_class:v20_class, 
+               names_to = "class_type",
+                 values_to = "class") %>% 
+  ggplot() +
+  geom_histogram(aes(x = class,  fill = class_type), stat="count"  , position = "dodge") +
+  theme_bw()+
+  labs(x = "How many mounds can be seen from this location?")  # add text to the columns?
+
+# faceted
+
+class_names <- c(`max_class` = "Bare-earth model",
+                    `v10_class` = "Static 10m vegetation",
+                    `v20_class` = "Variable 20m vegetation"
+                    )
+
+intervis %>%
+  pivot_longer(cols = max_class:v20_class, 
+               names_to = "class_type",
+                 values_to = "class") %>% 
+  ggplot() +
+  geom_histogram(aes(x = class,  fill = class_type), stat="count", show.legend = FALSE ) +
+  facet_wrap(~class_type,
+             labeller = as_labeller(class_names))+
+  theme_bw()+
+  scale_fill_grey(start = .2, end = .8)+
+  labs(x = "Impact of vegetation: How many other mounds can a mound see?")  # add text to the columns?
+ggsave("figures/vegmodel_histogram_bw.png", width = 7, height = 4)
+```
+

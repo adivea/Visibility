@@ -1,0 +1,988 @@
+---
+title: "Visibility"
+author: "Adela Sobotkova"
+date: "2024-04-12"
+output: html_document
+---
+## Purpose and prerequisites
+This script calculates mutual intervisibility (line of sight) between various archaeological features, starting here with burial mounds in the Yambol Region within ASTER elevation raster (30m spatial resolution). 
+
+This markdown guides you to: 
+
+1. Define functions to calculate line-of-sight visibility between two features and automate the process for a 1000 features. 
+2. Visualize intervisibility for calculated features (here: mounds in Yambol). To visualize, you can skip directly to section "Visualizing Intervisibility".
+3. TBD: intervisibility between mounds and settlements , started but needs completion
+
+The script basically works, calculating linestrings, raster profiles, and intervisibility between Yam_mounds and generating maps
+
+The proof of concept is done on BA mounds and to replicate it you might need: 
+- to run 09 BA mounds to have the necessary libraries and digital objects
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+```
+
+## Load 2009-2022 data
+```{r load-data}
+# Terrain BOM
+Y_elev <- raster("data/large/Yelev32635.tif")
+plot(Y_elev)
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+mapview(Yam_mnds, zcol = "Type")
+
+Yam_mnds %>% 
+  group_by(Type) %>% 
+  tally()
+```
+### Prominence
+```{r}
+mnd_85 <- Yam_mnds %>% 
+  dplyr::filter(prom250mbuff>85,
+                HeightMax > 1.5) 
+  
+mapview(Yam_mnds, cex = 0.1)+
+mapview(mnd_85, cex = "prom250mbuff", zcol = "HeightMax")
+```
+
+ 
+## Intervisibility functions
+
+Intervisibility in human terms mean that two or more points in the landscape have a clear line of sight between them (given reasonable visibility). In computational terms, it means that a straight line connecting the z values of the A and B (the two end-points) does not intersect a polygon formed by terrain profile between them. If it doesn't, A can see B.
+Let's test such line of sight by extracting data out of raster cells between our BA points.
+
+https://stackoverflow.com/questions/21841387/r-code-that-evaluates-line-of-sight-los-between-two-lat-lon-points 
+
+https://gis.stackexchange.com/questions/272122/performing-viewshed-analysis-in-r
+```{r define-cansee-functions}
+cansee <- function(r, xy1, xy2, h1=0, h2=0){
+### can xy1 see xy2 on DEM r?
+### Y_elev is a DEM in same x,y, z units
+### xy1 and xy2 are 2-length vectors of x,y coords
+### h1 and h2 are extra height offsets (ie. mound heights)
+###  (eg top of mast, observer on a ladder etc)
+    xyz = rasterprofile(r, xy1, xy2)
+    np = nrow(xyz)-1
+    h1 = xyz$z[1] + h1
+    h2 = xyz$z[np] + h2
+    hpath = h1 + (0:np)*(h2-h1)/np
+    return(!any(hpath < xyz$z))
+}
+
+viewTo <- function(r, xy, xy2, h1=0, h2=0, progress="none"){
+    ## xy2 is a matrix of x,y coords (not a data frame)
+    require(dplyr)
+    apply(xy2, 1, function(d){cansee(r,xy,d,h1,h2)}, .progress=progress)
+}
+
+viewTo <- function(r, xy, xy2, h1=0, h2=0){
+    ## xy2 is a matrix of x,y coords (not a data frame)
+    require(dplyr)
+    apply(xy2, 1, function(d){cansee(r,xy,d,h1,h2)})
+}
+
+rasterprofile <- function(r, xy1, xy2){
+### sample a raster along a straight line between two points
+### try to match the sampling size to the raster resolution
+    dx = sqrt( (xy1[1]-xy2[1])^2 + (xy1[2]-xy2[2])^2 )
+    nsteps = 1 + round(dx/ min(res(r)))
+    xc = xy1[1] + (0:nsteps) * (xy2[1]-xy1[1])/nsteps
+    yc = xy1[2] + (0:nsteps) * (xy2[2]-xy1[2])/nsteps
+    data.frame(x=xc, y=yc, z=r[cellFromXY(r,cbind(xc,yc))])
+}
+```
+
+Let's test these three functions with real data, first the `cansee()`
+
+
+## Automating the intervisibility calculation
+
+### prep the data for cansee() function
+```{r auto-prep}
+# origin point coordinates and height
+Yam_mnds %>% 
+  group_by(Type) %>% tally()
+
+Yam_mnds$HeightMax[is.na(Yam_mnds$HeightMax)] <- 0
+
+
+origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+target <- origin 
+
+class(origin)
+```
+
+### slow automation via a for-loop
+Loops take long so evaluation is off.
+```{r loop, eval = FALSE}
+# LOOP: works but takes days to finish, reduce the i and e if running a test!
+result_table <- NULL
+for (i in 1:nrow(origin)){
+  for (e in 1:nrow(target)){print(e)
+      result = cansee(Y_elev, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+    result_row <- cbind(i,e, result) 
+    result_table <- rbind(result_table, result_row)
+  }
+
+}
+
+# I stopped the process after 24 hours when it reached ~250,000 calculations
+# maxima were i = 241, and e = 780 ; restart the calculations there
+
+head(result_table)
+tail(result_table)
+saveRDS(result_table, "../output_data/Yam_mnd_intervis250k.rds")
+
+```
+
+Finishing the 1,000,000 calculations takes a while! (1 hr so far at 17.18 on Thursday night).
+OK, some 24 hours later (Friday afternoon), 241 mounds (*1000) were completed. Clearly the tasks takes 4 days unless we successfully ...
+
+### Parallelize!
+Parallelisation is much faster than loops but still takes ca 6-12 hours for the whole dataset so run it on demand, if needed
+```{r auto-foreach, eval = FALSE}
+# install.packages("doParallel")
+# install.packages("foreach")
+library(foreach)
+library(doParallel)
+library(data.table)
+
+detectCores() # 22 as some are multi-threaded
+detectCores(logical = FALSE) # 16 real ones
+
+cl <- makeCluster(12) # keep 4 cores so screensaver can run on W11
+registerDoParallel(cl)
+
+# Start experiment
+origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+target <- origin 
+
+# nesting both i and e with foreach 
+ie_table <- foreach (i= 1:nrow(origin), .combine = 'rbind',.packages = c("data.table", "raster")) %do% {
+  print(i)
+  foreach( e= 1:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
+  print(e)
+  result = cansee(Y_elev, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result_row <- c(i,e, result)
+  }
+ # result_table <- rbind(result_table, result_row)
+}
+
+dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
+saveRDS(ie_table, "../output_data/Yam_mnds_intervis.rds")
+```
+### Compare efficiency between for-loop and foreach
+Let's run 4 * 4 (16) or/and 14*14 (~196) calculations using both a for loop and foreach to compare their relative speeds.
+
+```{r compare-loop-foreach, eval = FALSE}
+loop_table <- NULL
+runtime1 <- system.time(
+for (i in 1060:nrow(origin)){
+  print(i)
+  for (e in 1060:nrow(target)) {
+    print(e)
+    result = cansee(Y_elev, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+    result_row <- cbind(i,e, result)
+   loop_table <- rbind(loop_table, result_row)
+    }
+}
+)
+
+runtime2 <- system.time(
+parallel_table <- foreach (i= 1060:nrow(origin), .combine = 'rbind',.packages = c("data.table", "raster")) %do% {
+  print(i)
+  foreach( e= 1060:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
+  print(e)
+  result = cansee(Y_elev, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result_row <- c(i,e, result)
+  }
+}
+)
+
+dim(parallel_table)
+dim(loop_table)
+runtime1
+runtime2
+```
+
+At 16 iterations (16 results), the foreach 'elapsed' time is half of the loop and 'user' time is 5x less.
+> runtime1
+   user  system elapsed 
+   0.06    0.01    0.23 
+> runtime2
+   user  system elapsed 
+   0.01    0.00    0.13 
+   
+At 196 iterations (196 results), the foreach (with 12 cores) 'elapsed' time is 1/3 of the for loop and 'user' time is 50x less    
+> runtime1
+   user  system elapsed 
+   0.53    0.02    3.14 
+> runtime2
+   user  system elapsed 
+   0.01    0.00    1.06
+   
+### Explore intervisibility results   
+```{r results-test, eval= FALSE}
+# Check the results of the initial intervisibility run
+result_table <- readRDS("../output_data/result_table.rds")
+result_table <- as.tibble(result_table)
+
+head(result_table)
+result_table <- result_table %>% 
+  rename(i = V1, e = V2, visibility = V3)
+
+# 10 most commanding mounds! i is the index, n is the number of visible features from it
+result_table %>% 
+  group_by(i) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) # mounds no 333, 38 and 1 see the most other mounds (393-409)
+
+# all the mounds visible from mound no. 333 (n = 409)
+result_table %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(e) 
+```
+
+## Visualizing intervisibility results in BOM
+
+```{r most-intervisible-BOM-map}
+# load data on visibility and major sites
+mnd_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
+
+mnd_vis %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412
+
+# group by viewpoint, join to spatial points and plot on a map
+library(mapview)
+
+mnd_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:50) %>% 
+  mutate(n_log = log10(n)) %>% 
+  # join the summarized dataframe of 25 most visible mounds to mound spatial points
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  # activate the geometry column with proper CRS
+  st_as_sf(crs = 32635) %>% 
+  # plot the 25 most visible mounds, varying their radius by number of visible features from this location and varying color by mound height
+  mapview(cex = "n" , zcol = "n_log") + 
+  # show other mounds in the background as small dots
+  mapview(Yam_mnds,cex = 0.1) 
+  # differentiate mounds visible from 9412 (the most visible single features)
+  #mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9412), cex = 1)
+
+mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
+```
+
+## Intervisibility of mounds in rasters with modelled vegetation
+Rather than calculating LoS over bare-earth DEM, let's model it over surface where random stands of trees and scrub have been simulated. We load two rasters produced via 08_VisibilityProm.R:
+
+1. DEM with vegetation modeled as random stands of trees of 10m height covering 50% of the extent of Yambol (randomly)
+2. DEM with vegetation varying in height from 1-20m (normally distributed around a peak at 10) covering 50% of the extent of Yambol randomly
+
+These DEMs are created by overlay of vegetation rasters and  Yambol elevation, with sum as the function on all values, increasing the terrain elevation by 10 - 20 m (producing Y_elev10 and Y_elev20grad respectively).
+
+The hypothesis is that the vegetation will reduce the LoS among mounds that are at lower elevation differences or closer to one another. (Following Skov-Petersen)
+
+```{r auto-foreach-veg-models, eval = FALSE}
+# install.packages("doParallel")
+# install.packages("foreach")
+library(foreach)
+library(doParallel)
+library(data.table)
+
+detectCores() # 22 as some are multi-threaded
+detectCores(logical = FALSE) # 16 real ones
+
+cl <- makeCluster(12) # keep 4 cores so screensaver can run on W11
+registerDoParallel(cl)
+
+# Start experiment
+origin <- cbind(st_coordinates(Yam_mnds), h = Yam_mnds$HeightMax)
+target <- origin 
+
+# nesting both i and e with foreach 
+veg10_table <- foreach (i= 1:nrow(origin), .combine = 'rbind',.packages = c("data.table", "raster")) %do% {
+  print(i)
+  foreach( e= 1:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
+  print(e)
+  result = cansee(Y_elev10, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result_row <- c(i,e, result)
+  }
+ # result_table <- rbind(result_table, result_row)
+}
+
+veg10_table <- veg10_table %>%
+  as_tibble() %>% 
+  rename(i = V1, e = V2, visibility = V3)
+
+veg10_table$TRAPorigin <- Yam_mnds$TRAP[veg10_table$i]
+veg10_table$TRAPtarget <- Yam_mnds$TRAP[veg10_table$e]
+
+saveRDS(veg10_table, "output_data/veg10los.rds")
+
+veg20_table <- foreach (i= 1:nrow(origin), .combine = 'rbind',.packages = c("data.table", "raster")) %do% {
+  print(i)
+  foreach( e= 1:nrow(target), .combine = 'rbind',.packages = c("data.table", "raster")) %dopar% {
+  print(e)
+  result = cansee(Y_elev20grad, origin[i,1:2], target[e,1:2], h1 = origin[i,3], h2 = target[e,3])
+  result_row <- c(i,e, result)
+  }
+ # result_table <- rbind(result_table, result_row)
+}
+dim(veg20_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
+
+veg20_table$TRAPorigin <- Yam_mnds$TRAP[veg20_table$i]
+veg20_table$TRAPtarget <- Yam_mnds$TRAP[veg20_table$e]
+
+saveRDS(veg20_table, "output_data/veg20grad_los.rds")
+
+```
+
+### Intervisibility in a model with 0-20m vegetation
+Let's explore what the random injection of 0-20m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
+
+```{r results-test-20}
+# Check the results of the initial intervisibility run
+result_table20 <- readRDS("output_data/veg20grad_los.rds")
+
+head(result_table20)
+
+# 10 most commanding mounds! i is the index, n is the number of visible features from it
+result_table20 %>% 
+  group_by(i) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) # mounds no 333, 38 and 1 see the most other mounds (393-409)
+
+# all the mounds visible from mound no. 38, TRAP 9044,(n = 291) Previously it was mound no.333  9412, which had 409 (now it has 279, 131 less than in bare earth model) 
+result_table20 %>% 
+  filter(i == 38, visibility == 1) %>% 
+  arrange(desc(TRAPtarget)) %>% 
+  distinct(TRAPtarget) 
+```
+
+
+### Most visible mound 9412 in veg20 gradual
+
+```{r max-veg20}
+
+# old most-seeing mound 9412 no. 333 now drops from 409 to 279)
+result_table20 %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412veg20  # list of TRAP numbers visible from 9412
+
+# The new see-the-most mound is 9044 no. 38 (n = 291)
+result_table20 %>% 
+  filter(i == 38, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9044veg20  # list of TRAP numbers visible from 9044
+
+
+```
+
+```{r most-commanding-200mnds}
+
+los20veg_200 <- result_table20 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% # mounds no 333, 38 and 1 see the most other mounds but numbers 
+  slice(1:200) %>% 
+  pull(TRAPorigin)
+
+```
+
+```{r most-intervisible-veg20-map}
+
+library(mapview)
+
+result_table20 %>% #created from output_data 20los results_table 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:25) %>% 
+  #rename(TRAP = TRAPorigin) %>% 
+  #merge(Yam_mnds, by = c("TRAP")) #%>% 
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "n" , zcol = "HeightMax") +mapview(Yam_mnds,cex = 0.1)
+  mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9044veg20), cex = 1)
+
+```
+
+In bare earth model, 9412 rules with line of sight to 409 other mounds. If we model random vegetation patches with mean 10m height, the mound with the greatest line of sight is 9044 a 6m tall mound near Botevo.
+
+
+### Intervisibility in a model with 10m vegetation
+
+Let's explore what happens after the random injection of exactly 10m high vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated), but perhaps not as much as in the 20m gradual model.
+
+```{r results-test-veg10}
+# Check the results of the initial intervisibility run
+result_table10 <- readRDS("output_data/veg10los.rds")
+result_table10 <- as_tibble(result_table10)
+
+head(result_table10)
+result_table10 <- result_table10 %>% 
+  rename(i = V1, e = V2, visibility = V3)
+
+# add TRAP IDs
+result_table10$TRAPorigin <- Yam_mnds$TRAP[result_table10$i]
+result_table10$TRAPtarget <- Yam_mnds$TRAP[result_table10$e]
+
+```
+### Most commanding mounds in veg10
+```{r 200-most-see}
+# 10 most commanding mounds! i is the index, n is the number of visible features from it
+result_table10 %>% 
+  group_by(i) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) # mounds no 333, 38 and 1 see the most other mounds but numbers are even lower than in the 0-20 gradual height model (247-261), 333 leads again as it did in BEmodel.
+
+# 200 most commanding mounds
+los10veg_200 <- result_table10 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% # mounds no 333, 38 and 1 see the most other mounds but numbers 
+  slice(1:200) %>% 
+  pull(TRAPorigin)
+
+
+# all the mounds visible from mound no. 333, TRAP 9412,(n = 261), lower than in veg20 (279) and less than in BEM(409).  
+result_table10 %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(e) 
+
+```
+
+
+```{r most-intervisible-veg10-map}
+result_table10 %>% 
+  filter(i == 333, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412veg10
+
+library(mapview)
+
+result_table10 %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% 
+  slice(1:25) %>% 
+  #rename(TRAP = TRAPorigin) %>% 
+  #merge(Yam_mnds, by = c("TRAP")) #%>% 
+  left_join(Yam_mnds, by = c("TRAPorigin"="TRAP")) %>%
+  st_as_sf(crs = 32635) %>% 
+  mapview(cex = "n" , zcol = "HeightMax") +mapview(Yam_mnds,cex = 0.1) #+
+  #mapview(Yam_mnds %>% dplyr::filter(TRAP%in%visiblefrom9412veg10), cex = 1)
+ # mapview(Yam_mnds %>% dplyr::filter(TRAP%in%los10veg_200), cex = 4) # 200 mounds with biggest fieldview in 10m vegetation model
+```
+
+In bare earth model, 9412 rules with line of sight to 409 other mounds. If we model random vegetation patches with mean 10m height, the mound with the greatest line of sight becomes 9044, a 6m tall mound near Botevo, with 291 visible mounds (with no limits on distance).
+
+Let's now see what happens when we institute a series of buffers to model visual decline with distance/bad weather/low light.
+
+Higuchi (Fig.2.12) lists that at noon, the visibility is:
+45km in very clear weather, 40km in clear, 30km under cloud, 10km in drizzle and 6-4km in steady rain or snow and 0.6km under fog.
+At dawn or dusk under the same condition, visibility drops to:
+20km, 15km, 10km, 5-2km, and 0.3km.
+
+## Intervisibility within 2, 5, 10km distance buffers
+Let's see how distance buffers following different weather affect the amount of intervisible mounds.
+
+Select from intervisible mounds those that intersect buffer of 1, 5,10, 20 and 45 km
+
+```{r}
+id <- 9418
+buffer <- 5000
+results <- mnd_vis 
+
+visible_at_dist <- function(id, buffer){
+  #create mound point
+  moundbuff <- Yam_mnds %>%
+    filter(TRAP == id) %>% 
+    st_buffer(buffer)
+  # create a vector of seen mounds id under ideal conditions
+  seen_mnds <- results %>%
+    filter(TRAPorigin == id, visibility == 1) %>%  
+    select(TRAPtarget) %>% 
+    pull()
+  # filter which one of the seen mounds is visible within the distance 
+  visible <- Yam_mnds %>% 
+    filter(TRAP%in%seen_mnds) %>% 
+    st_filter(moundbuff, .predicate = st_intersects) 
+  # write interim result to a table
+  vis_table <- cbind(id, buffer, targetid = visible$TRAP)
+  # vis_table <- visible %>% 
+  #   mutate(TRAPorigin = id, Buffer_km = buffer) %>% 
+  #   relocate(c(TRAPorigin,Buffer_km), .before = TRAP) %>% 
+  #   select(TRAPorigin, Buffer_km, TRAP) %>% st_drop_geometry()
+  # attach interim table to mastertable
+  #mapview(moundbuff, cex = 4) + mapview(visible)
+  #final_table <- rbind(final_table, vis_table) 
+}
+
+
+# test
+test <- visible_at_dist(9416,5000)
+```
+
+## Local to Regional: loop over different buffers to see which of the visible mounds falls to what distance band
+```{r most-commanding200-inBOM}
+losNOveg_200 <- mnd_vis %>% 
+  group_by(TRAPorigin) %>% 
+  tally(visibility) %>% 
+  arrange(desc(n)) %>% # mounds no 333, 38 and 1 see the most other mounds but numbers 
+  slice(1:200) %>% 
+  pull(TRAPorigin)
+
+
+```
+
+```{r prep-buffers, eval = FALSE}
+# create empty data container
+final_table <- data.frame(data.frame(id = numeric(), buffer = numeric(), targetid = numeric()))
+
+# vector of buffer distances
+buffers <- c(1000,2500,5000,10000,20000,40000)
+
+
+# test with 200 most commanding mounds los20veg200
+los10veg_200
+los20veg_200
+losNOveg_200
+
+# loop over the 200 mounds in each model (manually supply the collection variable)
+for (id in losNOveg_200){  # change the 200most commanding mounds dataset 
+  print(id)
+  for (buffer in buffers){
+    result <- visible_at_dist(id, buffer)
+    final_table <- rbind(final_table, result)
+  } 
+}  
+
+#now I can calculate which mound sees most at shorter intervals
+buffer_vis_table <- data.frame()
+for (i in buffers) {
+  bufvis <- final_table %>% 
+  filter(buffer == i) %>% 
+  group_by(id, buffer) %>% 
+  tally() %>% 
+  arrange(-n) %>% 
+  ungroup() %>%  
+  slice(1:20)  # the 20 most seeing mounds (with the highest number of seen objects)
+  buffer_vis_table <- rbind(buffer_vis_table,bufvis)
+}
+
+# save interim buffer_vis_table for later
+saveRDS(buffer_vis_table, "output_data/buffer_vis_table.rds")
+
+# Summarize total number of mounds seen at each  buffer
+summary <- buffer_vis_table %>%
+  group_by(buffer) %>% 
+  summarize(sum_seen_by200 = sum(n))
+
+# Recalculate to mounds seen per sq km of radius (problematic because aggregate, but a clue about vegetation impact) WATCH WHICH ONE YOU RUN
+mound_sums_per_buffer1 <- summary %>% 
+  mutate(area_km2 = 3.14569*(buffer/1000)^2,
+            mnd_km2 = sum/area_km2,
+         type = "model10mveg")
+
+mound_sums_per_buffer2 <- summary %>% 
+  mutate(area_km2 = 3.14569*(buffer/1000)^2,
+            mnd_km2 = sum/area_km2,
+         type = "model20mveg")
+
+mound_sums_per_buffer3 <- summary %>% 
+  mutate(area_km2 = 3.14569*(buffer/1000)^2,
+            mnd_km2 = sum/area_km2,
+         type = "modelNOveg")
+mound_sums_per_buffer3
+mound_sums_per_buffer2
+mound_sums_per_buffer
+write_csv(rbind(mound_sums_per_buffer,
+                mound_sums_per_buffer2,
+                mound_sums_per_buffer3),
+          "output_data/stuffseenby200veg.csv")
+# nice, apply this to geneeral resuts and veg20losgrad to see how visibility declines  
+```
+If we take the 10 most commanding mounds across all buffers, we see that although area covered by radius grows geometrically `(pi*r^2)`, the number of visible features only grows linearly (*2)
+```{r buffer-csv-load}
+summary <- read_csv("output_data/stuffseenby200veg.csv")
+buffer_vis_table <- readRDS("output_data/buffer_vis_table.rds")
+```
+
+
+CONTINUE # find the 10-20 most commanding mounds for each buffer zone and plot these and different visibility datasets: roads, settlements, and others
+
+###  with tmaps
+```{r plot-buffers}
+library(tmap)
+tmap_mode(mode = "view")
+Yam_mnds %>% 
+  full_join(buffer_vis_table, by = c("TRAP" ="id")) %>%  
+  dplyr::filter(!is.na(buffer)) %>% 
+  tm_shape(.)+
+  tm_facets(by = "buffer",
+            ncol = 3)+
+  tm_dots(size = "n")
+
+
+```
+
+## Buffers: assess
+Which mounds appear constantly despite distance erosion and other limitations?
+```{r buffer-models-shared}
+bom_10 <- losNOveg_200[losNOveg_200 %in% los10veg_200]  # 108 are shared among the BOM and 10veg
+veg10_20 <- los10veg_200[los10veg_200 %in% los20veg_200] # 91 are shared among 10 and 20veg
+# mounds intervisible among most models
+bom_10[bom_10%in%veg10_20] # 68 are shared among all lists  (persistently seeing mounds)
+
+```
+
+
+
+## Intervisibility with settlements
+
+- test for visibility between mounds and major settlements - eg. Kabyle, Dadopara and further south Turkish sites.
+
+Let's load archaeological settlements (BA-RM) known from Yambol
+```{r load-yam-sites}
+sites <- data.frame(name = c("Drazhevo","Kabyle", "Dadopara", "Stroino"),
+                    lat = c(42.544722002584564,42.548058964016256,  42.221831,  42.292159),
+                    long = c(26.44793978843489,26.48336749894564, 26.339603, 26.700300))
+
+sites <- sites %>% 
+  st_as_sf(coords = c("long", "lat"), crs = 4326)
+
+y_sites <- read_sf("~/../Desktop/TRAP_Oxbow/YAM/YAM_scatterpoints.shp")
+y_sites
+
+
+library(mapview)
+mapview(sites)+mapview(y_sites)
+sites[2,]
+```
+
+
+```{r Kabyle-vis-calculation, eval = FALSE}
+Kabyle <- sites %>% 
+  filter(name == "Kabyle") %>% 
+  st_transform(crs = 32635) %>% 
+  st_coordinates()
+
+result <- cansee(Y_elev, Kabyle , target[, 1:2], h1 = 2, h2 = target[,3])
+  
+result_table <- NULL
+for (e in 1:nrow(target)){print(e)
+      result = cansee(Y_elev, Kabyle, target[e,1:2], h1 = 2, h2 = target[e,3])
+    result_row <- cbind(e, result) 
+    result_table <- rbind(result_table, result_row)
+  }
+
+head(result_table)
+saveRDS(result_table, "output_data/Kabylesees.rds")
+
+```
+
+
+```{r Kabyle-visible-points}
+result_table <- readRDS("output_data/Kabylesees.rds")
+result_table <- as_tibble(result_table)
+result_table$TRAPtarget <- Yam_mnds$TRAP[result_table$e] 
+
+Kabylesees <- as_tibble(result_table)
+
+Kabylesees <- Kabylesees %>%
+  filter(result == 1) 
+ 
+Yam_mnds %>% 
+  filter(TRAP %in% Kabylesees$TRAPtarget) %>% 
+  mapview()
+
+```
+
+
+## The Winners
+### Visibility lines for 9412
+```{r linestrings-9412}
+# Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
+
+mostvisiblemnd <- visiblefrom9044veg20 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+
+lines_sm <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_sm) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_sm)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+plot(lines_sm); plot(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd) %>% st_geometry, add =T)
+# https://stackoverflow.com/questions/65498300/how-to-efficiently-create-linestrings-from-points
+# https://stackoverflow.com/questions/58150279/plotting-lines-between-two-sf-point-features-in-r
+
+```
+
+The linestrings for 9412 seem to reach the national border, which is hard to believe... 
+What is going on here? Let's check the prominence of the points first and raster profiles second.
+
+
+## Raster profile
+```{r raster-profile-plot}
+profile <- function(IDorigin, IDtarget){
+     # must be an elevation raster
+  # library(raster)
+  # if(!exists(Y_elev)){
+  #    Y_elev <- raster("../output_data/large/Yelev32635.tif")}
+     # must be a simple feature with same CRS as raster
+  library(sf) 
+  # target just as a dataframe of x, y, WITHOUT height
+  origin <- Yam_mnds %>%  
+         filter(TRAP == IDorigin) %>% 
+          st_coordinates()  
+  target <- Yam_mnds %>% 
+         filter(TRAP == IDtarget) %>%
+          st_coordinates()
+  # target needs to be a dataframe of x, y, and height
+  testprofile <- rasterprofile(Y_elev,  origin, target)
+  x = c(0,nrow(testprofile))
+  y = testprofile$z[c(1,nrow(testprofile))]
+
+    # Plot profile with start and end point elevation
+  plot(testprofile$z, type = "l", 
+       main = paste0("Terrain profile between mounds ", IDorigin, " and ", IDtarget),  
+       ylab = "Elevation (m)", xlab = "Distance in raster pixels (1 pixel = 30m)"); 
+  lines(x,y, col = "red", lwd = 2)
+  
+}
+
+ # these two points are at opposite sides of the region
+
+profile(9412, 8242)
+profile(9044, 8251)
+
+# Print figure
+tiff("figures/03.tiff", width = 9, height = 6, units = "in", res = 300)
+profile(9412, 8242)
+dev.off()
+```
+
+## 8007
+```{r}
+mnd_vis %>% 
+  filter(TRAPorigin == 8007, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom8007NOveg  # list of TRAP numbers visible from 9044
+
+result_table10 %>% 
+  filter(TRAPorigin == 8007, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom8007veg10  # list of TRAP numbers visible from 9044
+
+result_table20 %>% 
+  filter(TRAPorigin == 8007, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom8007veg20  # list of TRAP numbers visible from 9044
+
+mostvisiblemnd <- visiblefrom8007veg20 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+
+lines_sm <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_sm) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_sm)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+```
+
+## Kabyle
+```{ Kabyle-view-linestrings}
+Kabyle_sf <- Kabyle %>% 
+  as_tibble() %>% 
+  st_as_sf(coords = c("X", "Y"), crs = 32635)  
+Kabylesees
+
+mostvisiblemnd <- Kabylesees$TRAPtarget # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+# mostvisiblemnd <- visiblefrom8007veg20 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Kabyle_sf)),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+
+lines_sm <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_sm) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_sm)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+
+```
+
+## Chronology
+Downloading the mound and burial data for each of the two litarute corpus datasets, Izvestia and AOR. 
+```{r mnds-google}
+library(googlesheets4)
+gs4_deauth()
+mnd_izv <- read_sheet("https://docs.google.com/spreadsheets/d/1wOxbKVHGNHox4h86Z5ZXXADUubMJofC1KqDLMLT13a8/edit#gid=369527838", 
+                      range = "General",
+                      col_types = 'nccccnnccncccccccccccc')
+
+burial_izv <- read_sheet("https://docs.google.com/spreadsheets/d/1wOxbKVHGNHox4h86Z5ZXXADUubMJofC1KqDLMLT13a8/edit#gid=369527838", 
+                      range = "BurialAttributes",
+                      col_types = 'ncnccccnccccccccccccccccccccnncccc')
+
+mnd_aor <- read_sheet("https://docs.google.com/spreadsheets/d/1cx0nntcCLgrwQvCvvIYkjFJ-TnoJ0QRJfTgrf2qEEv4/edit#gid=1795672216", 
+                      range = "GeneralSpatial",
+                      col_types = 'nccnnncccc')
+
+burial_aor <- read_sheet("https://docs.google.com/spreadsheets/d/1cx0nntcCLgrwQvCvvIYkjFJ-TnoJ0QRJfTgrf2qEEv4/edit#gid=1795672216", 
+                      range = "BurialAttributes",
+                      col_types = 'nccccnccccccccccccccnnc')
+
+# glimpse(mnd_izv)
+# glimpse(burial_izv)
+# glimpse(mnd_aor)
+# glimpse(burial_izv)
+
+Yam_aor <- mnd_aor %>% 
+  full_join(burial_aor, by = "MoundID") %>% 
+  filter(!is.na(Long)) %>% 
+  st_as_sf(coords = c("Long", "Lat"), crs = 4326) %>% 
+  filter(Region == "Yambol") 
+ 
+unique(Yam_aor$MoundID) # 40 mounds
+
+Yam_izv <- mnd_izv %>% 
+  full_join(burial_izv, by = "MoundID") %>% 
+  filter(!is.na(Long)) %>% 
+  st_as_sf(coords = c("Long", "Lat"), crs = 4326) %>% 
+  filter(Region == "Yambol")
+
+unique(Yam_izv$MoundID) # 10 mounds
+
+```
+
+```{r plot-chrono}
+Yam_aor %>% 
+   filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+  
+Yam_izv %>% 
+  filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+Yam_izv$StartDate
+Yam_izv$Enddate
+
+
+# which attributes overlap
+names <- names(Yam_aor)[which(names(Yam_aor)%in%names(Yam_izv))]
+
+all <- rbind(Yam_aor[names], Yam_izv[names])
+
+all %>% 
+  filter(!is.na(StartDate)) %>% # 295 graves
+  # distinct(MoundID)  #41 mounds
+  mapview(zcol = "StartDate")
+
+
+
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 41 mounds in Yambol")
+
+```
+### printing
+```{r eval = FALSE}
+tiff( "figures/02.tiff", width = 8, height = 5, units = "in", res = 300)
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 41 mounds in Yambol")
+dev.off()
+```
+
+
+```{r map-chrono}
+mapview(Yam_aor,zcol = "StartDate" ) + mapview(Yam_izv, zcol = "StartDate") + 
+  mapview(Yam_mnds, cex = 1)
+mapview(Yam_mnds %>% filter(prom250mbuff >75))
+
+mapview(all,zcol = "StartDate" ) +   mapview(Yam_mnds, cex = 1)
+mapview(all,zcol = "Enddate" ) +   mapview(Yam_mnds, cex = 1)
+
+```
+## Tmaps Chronology!
+
+## Check raster:terrain results against the winners
+We have mound-centered indeces of ruggedness and topographic prominence, which should align with the objective/dry measure of visibility above.
+The measures are at different scales. Prominence in 250m buffer specifies how big a fraction (in percentages) of the surrounding area is visible to a person on the mound.
+TPI is measured from on a scale from -3 to 2 , with most values between 0 and 1. TRI is between 0 and 4, with median at 1. Rough measure goes from 0 to 15, with mean at 3.7.
+```{r}
+# various measures of prominence
+summary(Yam_mnds[, c("prom250mbuff", "TPI", "TRI", "rough")])
+
+
+# prominence in 250m buffer
+hist(Yam_mnds$prom250mbuff)
+Yam_mnds %>% 
+  filter(prom250mbuff > 95) %>% 
+  mapview(zcol = "prom250mbuff") # 9412 not present!
+
+# TPI
+hist(Yam_mnds$TPI)
+Yam_mnds %>% 
+  filter(TPI >= 1) %>% 
+  mapview(zcol = "TPI")# 9412 not present!
+
+# TRI
+hist(Yam_mnds$TRI)
+Yam_mnds %>% 
+  filter(TRI >= 2.53) %>% 
+  mapview(zcol = "TRI")# 9412 not present!
+
+# rough
+hist(Yam_mnds$rough)
+Yam_mnds %>% 
+  filter(rough >= 7) %>% 
+  mapview(zcol = "rough")# 9412 not present!
+```
