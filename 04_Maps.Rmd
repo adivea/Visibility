@@ -4,9 +4,17 @@ output: html_document
 date: "2024-06-24"
 ---
 
+
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+
 ```
+
 
 ### Maps
 ```{r}
@@ -23,6 +31,8 @@ Y_city <- Y_towns %>%
 # Yambol surveys
 library(terra)
 Y <- rast("data/large/Y_elev_ext.tif")
+d <- st_make_grid(st_bbox(st_buffer(region, 5000)), n =1)
+dem_Y5 <- crop(Y, d)
 ```
 
 
@@ -35,25 +45,20 @@ plot(con, add = T)
 contours <- con %>% 
   st_as_sf()
 # st_write(contours, "output_data/Yam_contours.geojson")
+options(scipen=999)
 
+```
+## Figure 01
 
+```{r}
 tiff("figures/01.tiff", width = 6, height = 7, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0));  # Play with number of colors 0 - 256 to select the right shades
+plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T);
+plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
 plot(BG$geometry, add = T, lwd = 2)
 dev.off()
-```
 
-
-```{r}
-# Open a TIFF device
-tiff("figures/elevation_plot.tiff", width = 8, height = 6, units = "in", res = 300)
-
-# Create the plot
-plot(dem_Y5, col = grey.colors(256, start = 1, end = 0))
-
-# Close the device to save the plot
-dev.off()
 ```
 
 ## MOST Intervisible 
@@ -81,6 +86,17 @@ Y_vis %>%
 
 mapview(Yam_mnds[Yam_mnds$TRAP %in% visiblefrom9412,])
 ```
+
+##  9412
+
+```{r}
+Y_vis %>% 
+  filter(TRAPorigin == 9412, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() -> visiblefrom9412
+```
+
 
 ### Visibility lines for 9412
 ```{r linestrings-9412}
@@ -112,18 +128,45 @@ mapview(lines_sm)+
 
 ```
 
+## Figure 4 
+```{r}
+# map elements
+# Function to add a north arrow
+add_north_arrow <- function(x, y, length = 1, label = "N") {
+  arrows(x, y, x, y + length, col = "black", lwd = 2)
+  text(x, y + length + 1000, label, cex = 1, col = "black")
+}
+
+# Function to add a scale bar
+add_scale_bar <- function(x, y, length = 25000, label = "25 km") {
+  segments(x, y, x + length, y, col = "black", lwd = 2)
+  segments(x, y, x, y + 1000, col = "black", lwd = 2)
+  segments(x + length, y, x + length, y + 0.2, col = "black", lwd = 2)
+  text(x + length / 2, y - 1000, label, cex = 1, col = "black")
+}
+
+
+
+# Add scale bar at coordinates (2, 1)
+add_scale_bar(2, 1, length = 3, label = "3 units")
+```
 
 ```{r}
-
 tiff("figures/04.tiff", width = 10, height = 10, units = "in", res = 300)
 plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
-plot(BG$geometry, add = T, lwd = 2); plot(lines_sm, add =T)
+plot(BG$geometry, add = T, lwd = 4); plot(lines_sm, add =T)
+# Add north arrow at coordinates (8, 8)
+add_north_arrow(502000, 4642000, length = 2500, label = "N")
+# Add scale bar at coordinates (2,502000, 4645000 1)
+add_scale_bar(480000, 4640000)
 dev.off()
 ```
 ### Visibility lines for 8007
 ```{r linestrings-8007}
 # Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
+
+res_two <- readRDS("output_data/Y8007_intervis.rds")
 visiblefrom8007 <- res_two %>% 
   filter(visibility == 1) %>% 
   pull(TRAPtarget)
@@ -154,12 +197,17 @@ mapview(lines_8007)+
 
 ```
 
+## Figure 5
 
 ```{r}
 
 tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(Y35, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
 plot(BG$geometry, add = T, lwd = 2); plot(lines_8007, add =T)
+# Add north arrow at coordinates (8, 8)
+add_north_arrow(502000, 4642000, length = 2500, label = "N")
+# Add scale bar at coordinates (2,502000, 4645000 1)
+add_scale_bar(480000, 4640000)
 dev.off()
 ```
