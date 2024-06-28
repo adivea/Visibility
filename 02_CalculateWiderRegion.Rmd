@@ -13,6 +13,7 @@ library(tidyverse)
 library(mapview)
 ```
 
+
 ## Load Yambol mounds, rasters, and region
 ```{r}
 # Yambol mounds
@@ -68,7 +69,7 @@ mm_Yext %>%
 
 # save intermediate products
 # st_write(mm_Yext, "output_data/Y25_mapmounds.shp", append = F)
-#st_write(Y_buf25, "data/Y_region_buf25k.shp")
+# st_write(Y_buf25, "data/Y_region_buf25k.shp")
 
 # Visualize additional mounds and their relief
 plot(Y_buf25$geometry, border = "red");plot(mm_Yext$geometry, add = T);plot(region$geometry, add =T, col = "green")
@@ -199,6 +200,7 @@ rm(ie_table)
 ie_table # first 100 mounds of origin and remaining 141 mounds of target
 res_one <- as_tibble(ie)
 res_two <- as_tibble(ie_table)
+
 
 tail(res_one)
 tail(res_two)
