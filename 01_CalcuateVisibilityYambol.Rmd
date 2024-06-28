@@ -784,7 +784,7 @@ profile(9412, 8242)
 profile(9044, 8251)
 
 # Print figure
-tiff("figures/03.tiff", width = 9, height = 6, units = "in", res = 300)
+tiff("figures/02.tiff", width = 9, height = 6, units = "in", res = 300)
 profile(9412, 8242)
 dev.off()
 ```
@@ -929,15 +929,15 @@ all %>%
 
 all %>% 
   filter(!is.na(StartDate)) %>% 
-  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 41 mounds in Yambol")
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 40 mounds in Yambol")
 
 ```
 ### printing
 ```{r eval = FALSE}
-tiff( "figures/02.tiff", width = 8, height = 5, units = "in", res = 300)
+tiff( "figures/01.tiff", width = 8, height = 5, units = "in", res = 300)
 all %>% 
   filter(!is.na(StartDate)) %>% 
-  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 41 mounds in Yambol")
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 40 mounds in Yambol")
 dev.off()
 ```
 
@@ -951,7 +951,6 @@ mapview(all,zcol = "StartDate" ) +   mapview(Yam_mnds, cex = 1)
 mapview(all,zcol = "Enddate" ) +   mapview(Yam_mnds, cex = 1)
 
 ```
-## Tmaps Chronology!
 
 ## Check raster:terrain results against the winners
 We have mound-centered indeces of ruggedness and topographic prominence, which should align with the objective/dry measure of visibility above.

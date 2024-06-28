@@ -24,6 +24,8 @@ Yam_mnds %>%
 
 # rasters
 #YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
+#Y_elev <- raster("data/large/Yelev32635.tif")
+
 Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
 
 # region admin

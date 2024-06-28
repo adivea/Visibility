@@ -28,7 +28,9 @@ BG <- read_sf("data/Bulgaria_Border.shp")
 Y_city <- Y_towns %>% 
   filter(Name_en == "Yambol")
 
-# Yambol surveys
+Y_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
+
+# Yambol rasters
 library(terra)
 Y <- rast("data/large/Y_elev_ext.tif")
 d <- st_make_grid(st_bbox(st_buffer(region, 5000)), n =1)
@@ -124,7 +126,7 @@ mapview(lines_sm)+
 
 ```
 
-## Figure 4 
+### Figure 4
 ```{r}
 # Start with map elements designed for 10in map offprint
 # Function to add a north arrow
@@ -141,10 +143,6 @@ add_scale_bar <- function(x, y, length = 25000, label = "25 km") {
   text(x + length / 2, y - 1000, label, cex = 1, col = "black")
 }
 
-
-
-# Add scale bar at coordinates (2, 1)
-add_scale_bar(2, 1, length = 3, label = "3 units")
 ```
 
 ```{r fig9412}
@@ -163,8 +161,8 @@ dev.off()
 ```{r linestrings-8007}
 # Test linestring creation from 9412 and its 409 visible mounds. The coords object needs to be a matrix, but to cbind one to many coordinates the component columns need to be dataframes.
 
-res_two <- readRDS("output_data/Y8007_intervis.rds")
-visiblefrom8007 <- res_two %>% 
+Y8007 <- readRDS("output_data/Y8007_intervis.rds")
+visiblefrom8007 <- Y8007 %>% 
   filter(visibility == 1) %>% 
   pull(TRAPtarget)
 mostvisiblemnd <- visiblefrom8007 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
@@ -194,14 +192,13 @@ mapview(lines_8007)+
 
 ```
 
-## Figure 5
+### Figure 5
 
 ```{r fig8007}
-
 tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm$geometry, cex = 0.4, add =T);
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
-plot(BG$geometry, add = T, lwd = 2); plot(lines_8007, add =T)
+plot(BG$geometry, add = T, lwd = 4); plot(lines_8007, add =T)
 # Add north arrow at coordinates (8, 8)
 add_north_arrow(502000, 4642000, length = 2500, label = "N")
 # Add scale bar at coordinates (2,502000, 4645000 1)

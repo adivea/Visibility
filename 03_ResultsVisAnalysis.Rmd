@@ -42,11 +42,13 @@ mm_Yext <- read_sf("output_data/Y25_mapmounds.shp")
 # Intervisibility
 Y_in <- readRDS("output_data/Yam_mnds_intervis.rds")
 Y_out <- readRDS("output_data/Yam_ext_mnds_intervis.rds")
+Y_vis <- Y_in %>% rbind(Y_out)
+saveRDS(Y_vis, "output_data/Yam_mnds_intervis.rds")
 ```
 
 ## Final visibility review
 ```{r in_ext-vis}
-Y_vis <- Y_in %>% rbind(Y_out)
+Y_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
 all_vis_sorted <- Y_vis %>% 
   group_by(TRAPorigin) %>% 
   tally(visibility) %>% 
@@ -266,6 +268,7 @@ intervis %>%
 ```
 ## Histograms factoring vegetation models into intervisibility 
 ```{r}
+intervis <- readRDS("output_data/Y_intervis_class_vegsim.rds")
 # stacked histograms
 intervis %>%
   #select(TRAPorigin, vis_max, vis_10, vis_20, max_class, v10_class, v20_class)
@@ -288,6 +291,9 @@ intervis %>%
   theme_bw()+
   labs(x = "How many mounds can be seen from this location?")  # add text to the columns?
 
+```
+### Figure 3
+```{r}
 # faceted
 
 class_names <- c(`max_class` = "Bare-earth model",
@@ -306,8 +312,8 @@ intervis %>%
   theme_bw()+
   scale_fill_grey(start = .2, end = .8)+
   labs(x = "The impact of vegetation: How many other mounds can a mound see?")  # add text to the columns?
-ggsave("figures/vegmodel_histogram_bw.png", width = 7, height = 4)
-ggsave("figures/04.tiff", width = 7, height = 4, dpi = 300, units = "in")
-?ggsave()
+
+# ggsave("figures/vegmodel_histogram_bw.png", width = 7, height = 4)
+ggsave("figures/03.tiff", width = 7, height = 4, dpi = 300, units = "in")
 ```
 
