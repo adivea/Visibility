@@ -177,7 +177,7 @@ mapview(Yam_mnds[Yam_mnds$TRAP %in% all10,])
 
 ## Vegetation models and Intervisibility 
 
-### model with 10m vegetation
+### Load data from 10m static vegetation model
 Let's explore what the random injection of 10m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
 
 ```{r results-test-10}
@@ -192,7 +192,7 @@ vis10veg_sorted
 ```
 
 
-### model with 0-20m vegetation
+### Load data from 0-20m variable vegetation model
 Let's explore what the random injection of 0-20m (10m mean height) vegetation into the elevation model. We anticipate that the overall intervisibility/ LoS will be reduced as a result of vegetation (as Skov-Petersen has demonstrated). 
 
 ```{r results-test-20}
@@ -206,7 +206,7 @@ vis20veg_sorted
 ```
 
 
-### Assessing decline in field of view with vegetation
+### Join all values 
 ```{r}
 intervis <- all_vis_sorted %>% 
   full_join(vis10veg_sorted, by = "TRAPorigin") %>% 
@@ -250,6 +250,8 @@ intervis <- intervis %>%
          v20_class = case_when(v20_log < 1 ~ "1 to 10",
                               v20_log < 2 ~ "10 to 100",
                               v20_log < 3 ~ "100 to 1000")) 
+
+saveRDS(intervis, "output_data/Y_intervis_class_vegsim.rds") # save results from mixed models
 
 intervis %>%
   pivot_longer(cols = max_class:v20_class, 
@@ -303,7 +305,9 @@ intervis %>%
              labeller = as_labeller(class_names))+
   theme_bw()+
   scale_fill_grey(start = .2, end = .8)+
-  labs(x = "Impact of vegetation: How many other mounds can a mound see?")  # add text to the columns?
+  labs(x = "The impact of vegetation: How many other mounds can a mound see?")  # add text to the columns?
 ggsave("figures/vegmodel_histogram_bw.png", width = 7, height = 4)
+ggsave("figures/04.tiff", width = 7, height = 4, dpi = 300, units = "in")
+?ggsave()
 ```
 
