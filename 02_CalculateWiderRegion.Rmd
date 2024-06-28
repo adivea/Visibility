@@ -13,26 +13,27 @@ library(tidyverse)
 library(mapview)
 ```
 
-## Load Yambol mounds
+## Load Yambol mounds, rasters, and region
 ```{r}
 # Yambol mounds
 Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
 Yam_mnds %>% 
   group_by(Type) %>% 
   tally()
-```
 
-## Load Mounds from Wider Area
-
-```{r}
 # rasters
 #YT_elev <- raster("data/large/YT_elev32635.tif") # vertical
 Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
 
 # region admin
 region <- read_sf("data/YamRegion.shp")
-Y_buf25 <- st_buffer(region, 25000)
+#Y_buf25 <- st_buffer(region, 25000)
+Y_buf25 <- st_read("data/Y_region_buf25k.shp")
 
+```
+
+## Mounds from Wider area
+```{r mm-all}
 # map mounds ~ 10,000 points
 m_all <- read_sf("data/MapMounds32635.shp")
 m_all %>% group_by(MpSymbl) %>% tally()
@@ -40,8 +41,6 @@ m_all %>% group_by(MpSymbl) %>% tally()
 # filter the most conservative symbol (sunburst) 4290 points
 mm <- m_all %>% 
     filter(grepl("^Hairy brown", MpSymbl)) # deleting 'brown' gets all rayed symbols
-
-
 ```
 
 ### Northern map mounds Angel digitized in June 2024
@@ -49,7 +48,7 @@ this concerns mounds north of Yambol - mostly in Stara Planina -  that fall with
 ```{r}
 mm_a <- read_sf("../YambolMoundAnalysis2023/data/MapMoundsA32635.geojson")
 mm_a$Notes <- ""
-mm <- mm_a %>% 
+mm <- mm %>% 
   rename(Id =identfr, createdBy=cretdBy, createdAt = FtrTmst,Latitude = Latitud, Longitude = Longitd, MapSymbol = MpSymbl, Notes = Note) %>% 
   dplyr::select(Id, createdBy, createdAt, Latitude, Longitude, MapSymbol, Notes) %>% 
   rbind(mm_a)
@@ -70,7 +69,6 @@ mm_Yext %>%
 # save intermediate products
 # st_write(mm_Yext, "output_data/Y25_mapmounds.shp", append = F)
 #st_write(Y_buf25, "data/Y_region_buf25k.shp")
-Y_buf25 <- st_read("data/Y_region_buf25k.shp")
 
 # Visualize additional mounds and their relief
 plot(Y_buf25$geometry, border = "red");plot(mm_Yext$geometry, add = T);plot(region$geometry, add =T, col = "green")
@@ -190,14 +188,14 @@ stopCluster(cl)
 
 dim(ie_table) # 1,151,329 calculations take ~12 hours (10x less than for loop) 
 head(ie_table, n =20)
-saveRDS(ie_table, "output_data/Y8007_intervis.rds")
-saveRDS(ie_table, "output_data/Yam_241_ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
+# saveRDS(ie_table, "output_data/Y8007_intervis.rds")
+# saveRDS(ie_table, "output_data/Yam_241_ext_mnds_intervis.rds") # 10 * 1200 calculations worked, 5000 were NA
 rm(ie_table)
 
 ```
 ### Combine the results from downscaled calculation
 ```{r}
-ie <- readRDS("output_data/Yam_100ext_mnds_intervis.rds") # first 100 mounds of origin and 1065 of target
+# ie <- readRDS("output_data/Yam_100ext_mnds_intervis.rds") # first 100 mounds of origin and 1065 of target
 ie_table # first 100 mounds of origin and remaining 141 mounds of target
 res_one <- as_tibble(ie)
 res_two <- as_tibble(ie_table)
@@ -219,6 +217,7 @@ res_two$TRAPorigin <- edge5km_mounds$TRAP[res_two$i]
 # for 8007 only 
 res_two$TRAPtarget <- c(Yam_mnds$TRAP, mm_Yext$Id)
 res_two$TRAPorigin <- 8007
+saveRDS(res_two, "output_data/Y8007_intervis.rds")
 
 # initial res_one processing, uncomment if you are recreating from scratch
 # result_table <- res_one %>% 

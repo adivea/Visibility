@@ -8,7 +8,7 @@ date: "2024-06-24"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-### Maps
+## Maps
 ```{r}
 path <- "C:/Users/au616760/OneDrive - Aarhus universitet/Documents/TRAP_Oxbow"
 # A bit of local infrastructure and topography
@@ -26,8 +26,8 @@ Y <- rast("data/large/Y_elev_ext.tif")
 ```
 
 
-# Vectorize DEM 
-```{r}
+## Vectorize DEM 
+```{r contours} 
 con <- as.contour(dem_Y5)
 plot(dem_Y5, axes = F)
 plot(con, add = T)
@@ -37,23 +37,11 @@ contours <- con %>%
 # st_write(contours, "output_data/Yam_contours.geojson")
 
 
-tiff("figures/01.tiff", width = 6, height = 7, units = "in", res = 300)
+#tiff("figures/00.tiff", width = 6, height = 7, units = "in", res = 300)
 plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
 plot(BG$geometry, add = T, lwd = 2)
-dev.off()
-```
-
-
-```{r}
-# Open a TIFF device
-tiff("figures/elevation_plot.tiff", width = 8, height = 6, units = "in", res = 300)
-
-# Create the plot
-plot(dem_Y5, col = grey.colors(256, start = 1, end = 0))
-
-# Close the device to save the plot
-dev.off()
+#dev.off()
 ```
 
 ## MOST Intervisible 
@@ -113,7 +101,7 @@ mapview(lines_sm)+
 ```
 
 
-```{r}
+```{r fig9412}
 
 tiff("figures/04.tiff", width = 10, height = 10, units = "in", res = 300)
 plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
@@ -155,7 +143,7 @@ mapview(lines_8007)+
 ```
 
 
-```{r}
+```{r fig8007}
 
 tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
 plot(Y35, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
