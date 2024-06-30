@@ -1,0 +1,68 @@
+---
+title: "05_Figures"
+author: "Adela Sobotkova"
+date: "2024-06-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+```
+
+```{r load-data}
+# Terrain BOM
+Y_elev <- raster("data/large/Yelev32635.tif")
+plot(Y_elev)
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+```
+
+## Figure 01 - Mound chronology
+
+## Figure 02 - Raster profile
+```{r raster-profile-plot}
+source("scripts/VisibilityFunctions.R")
+
+profile <- function(IDorigin, IDtarget){
+     # must be an elevation raster
+  # library(raster)
+  # if(!exists(Y_elev)){
+  #    Y_elev <- raster("../output_data/large/Yelev32635.tif")}
+     # must be a simple feature with same CRS as raster
+  library(sf) 
+  # target just as a dataframe of x, y, WITHOUT height
+  origin <- Yam_mnds %>%  
+         filter(TRAP == IDorigin) %>% 
+          st_coordinates()  
+  target <- Yam_mnds %>% 
+         filter(TRAP == IDtarget) %>%
+          st_coordinates()
+  # target needs to be a dataframe of x, y, and height
+  testprofile <- rasterprofile(Y_elev,  origin, target)
+  x = c(0,nrow(testprofile))
+  y = testprofile$z[c(1,nrow(testprofile))]
+
+    # Plot profile with start and end point elevation
+  plot(testprofile$z, type = "l", 
+       main = paste0("Terrain profile between mounds ", IDorigin, " and ", IDtarget),  
+       ylab = "Elevation (m)", xlab = "Distance in raster pixels (1 pixel = 30m)"); 
+  lines(x,y, col = "red", lwd = 2)
+  
+}
+
+ # these two points are at opposite sides of the region
+
+profile(9412, 8242)
+profile(9044, 8251)
+
+# Print figure
+tiff("figures/02.tiff", width = 9, height = 6, units = "in", res = 300)
+profile(9412, 8242)
+dev.off()
+```
+

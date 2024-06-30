@@ -1,0 +1,124 @@
+---
+title: "Mound chronology"
+author: "Adela Sobotkova"
+date: "2024-06-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE)
+library(sf)
+library(raster)
+library(tidyverse)
+library(mapview)
+```
+
+## Mound data
+```{r load-data}
+# Terrain BOM
+Y_elev <- raster("data/large/Yelev32635.tif")
+
+# Yambol mounds
+Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
+```
+
+## Mound Chronology
+Downloading the mound and burial data for each of the two literature corpus datasets, Izvestia and AOR. Now streamlined with Toshko's and Angel's help.
+```{r aor-izv-google}
+library(googlesheets4)
+gs4_deauth()
+mnd_izv <- read_sheet("https://docs.google.com/spreadsheets/d/1wOxbKVHGNHox4h86Z5ZXXADUubMJofC1KqDLMLT13a8/edit#gid=369527838", 
+                      range = "General",
+                      col_types = 'nccccnnccncccccccccccc')
+
+burial_izv <- read_sheet("https://docs.google.com/spreadsheets/d/1wOxbKVHGNHox4h86Z5ZXXADUubMJofC1KqDLMLT13a8/edit#gid=369527838", 
+                      range = "BurialAttributes",
+                      col_types = 'ncnccccnccccccccccccccccccccnncccc')
+
+mnd_aor <- read_sheet("https://docs.google.com/spreadsheets/d/1cx0nntcCLgrwQvCvvIYkjFJ-TnoJ0QRJfTgrf2qEEv4/edit#gid=1795672216", 
+                      range = "GeneralSpatial",
+                      col_types = 'nccnnncccc')
+
+burial_aor <- read_sheet("https://docs.google.com/spreadsheets/d/1cx0nntcCLgrwQvCvvIYkjFJ-TnoJ0QRJfTgrf2qEEv4/edit#gid=1795672216", 
+                      range = "BurialAttributes",
+                      col_types = 'nccccnccccccccccccccnnc')
+
+# glimpse(mnd_izv)
+# glimpse(burial_izv)
+# glimpse(mnd_aor)
+# glimpse(burial_izv)
+
+Yam_aor <- mnd_aor %>% 
+  full_join(burial_aor, by = "MoundID") %>% 
+  filter(!is.na(Long)) %>% 
+  st_as_sf(coords = c("Long", "Lat"), crs = 4326) %>% 
+  filter(Region == "Yambol") 
+ 
+unique(Yam_aor$MoundID) # 40 mounds
+
+Yam_izv <- mnd_izv %>% 
+  full_join(burial_izv, by = "MoundID") %>% 
+  filter(!is.na(Long)) %>% 
+  st_as_sf(coords = c("Long", "Lat"), crs = 4326) %>% 
+  filter(Region == "Yambol")
+
+unique(Yam_izv$MoundID) # 10 mounds
+
+```
+
+## Plot the AOR and IZV mounds's start date
+I select only mounds with dated cultural material, and plot their coordinates.
+The, plotting all the grave's assemblages' start-dates I generate a chronology overview.
+```{r plot-chrono}
+Yam_aor %>% 
+   filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+  
+Yam_izv %>% 
+  filter(!is.na(StartDate)) %>% 
+  #distinct(MoundID) %>% 
+  mapview()
+Yam_izv$StartDate
+Yam_izv$Enddate
+
+
+# Which attributes overlap
+names <- names(Yam_aor)[which(names(Yam_aor)%in%names(Yam_izv))]
+
+all <- rbind(Yam_aor[names], Yam_izv[names])
+
+all %>% 
+  filter(!is.na(StartDate)) %>% # 295 graves
+  # distinct(MoundID)  #41 mounds
+  mapview(zcol = "StartDate")
+
+# Chronology span for burial mound use
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 40 mounds in Yambol")
+
+```
+
+## Figure 01 - for printing
+Temporal span of the 295 burial assemblages for the 40 excavated mounds in Yambol 1960 -2014.
+```{r eval = FALSE}
+tiff( "figures/01.tiff", width = 8, height = 5, units = "in", res = 300)
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 40 mounds in Yambol")
+dev.off()
+```
+
+## Where are the mounds with dates located?
+
+```{r map-chrono}
+mapview(Yam_aor,zcol = "StartDate" ) + mapview(Yam_izv, zcol = "StartDate") + 
+  mapview(Yam_mnds, cex = 1)
+mapview(Yam_mnds %>% filter(prom250mbuff >75))
+
+mapview(all,zcol = "StartDate" ) +   mapview(Yam_mnds, cex = 1)
+mapview(all,zcol = "Enddate" ) +   mapview(Yam_mnds, cex = 1)
+
+```
