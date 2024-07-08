@@ -1,5 +1,5 @@
 ---
-title: "05_Figures"
+title: "Figures for DigiThrace Conference proceedings"
 author: "Adela Sobotkova"
 date: "2024-06-30"
 output: html_document
@@ -14,6 +14,9 @@ library(tidyverse)
 library(mapview)
 ```
 
+This script ties allows for the regeneration of all figures used in the Intervisibility paper for the DigitalThrace Conference Proceedings from April 2024 meeting in Sofia.
+
+
 ```{r load-data}
 # Terrain BOM
 Y_elev <- raster("data/large/Yelev32635.tif")
@@ -22,10 +25,35 @@ plot(Y_elev)
 Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
 ```
 
+```{r prep-maps}
+# Yambol data
+Y_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
+BG <- read_sf("data/Bulgaria_Border.shp")
+region <- read_sf("data/YamRegion.shp")
+
+# Yambol rasters
+library(terra)
+Y <- rast("data/large/Y_elev_ext.tif")
+d <- st_make_grid(st_bbox(st_buffer(region, 5000)), n =1)
+dem_Y5 <- crop(Y, d)
+```
+
 ## Figure 01 - Mound chronology
 
+Run script 05_Chronology.rmd in order to download and join the Izvestiya and AOR data.
+
+Temporal span of the 295 burial assemblages for the 40 excavated mounds in Yambol 1960 -2014.
+```{r fig1, eval = FALSE}
+tiff( "figures/01.tiff", width = 8, height = 5, units = "in", res = 300)
+all %>% 
+  filter(!is.na(StartDate)) %>% 
+  pull(StartDate) %>% table() %>% plot(ylab = "Grave count", main = "Temporal span of 295 burial assemblages from 40 mounds in Yambol")
+dev.off()
+```
+
+
 ## Figure 02 - Raster profile
-```{r raster-profile-plot}
+```{r raster-profile-fig2}
 source("scripts/VisibilityFunctions.R")
 
 profile <- function(IDorigin, IDtarget){
@@ -63,6 +91,151 @@ profile(9044, 8251)
 # Print figure
 tiff("figures/02.tiff", width = 9, height = 6, units = "in", res = 300)
 profile(9412, 8242)
+dev.off()
+```
+
+
+## Figure 03 - Intervisibility Histograms for BOM, Veg10, Veg20
+ 
+```{r hist-fig3}
+
+intervis <- readRDS("output_data/Y_intervis_class_vegsim.rds")
+
+# faceted
+class_names <- c(`max_class` = "Bare-earth model",
+                    `v10_class` = "Static 10m vegetation",
+                    `v20_class` = "Variable 20m vegetation"
+                    )
+
+intervis %>%
+  pivot_longer(cols = max_class:v20_class, 
+               names_to = "class_type",
+                 values_to = "class") %>% 
+  ggplot() +
+  geom_histogram(aes(x = class,  fill = class_type), stat="count", show.legend = FALSE ) +
+  facet_wrap(~class_type,
+             labeller = as_labeller(class_names))+
+  theme_bw()+
+  scale_fill_grey(start = .2, end = .8)+
+  labs(x = "The impact of vegetation: How many other mounds can a mound see?")  # add text to the columns?
+
+# ggsave("figures/vegmodel_histogram_bw.png", width = 7, height = 4)
+ggsave("figures/03.tiff", width = 7, height = 4, dpi = 300, units = "in")
+```
+
+## Figure 04 - Winner 9412
+
+```{r prep-fig4}
+visiblefrom9412 <- Y_vis %>% 
+  filter(TRAPorigin == 9412, visibility == 1) %>% 
+  arrange(desc(e)) %>% 
+  distinct(TRAPtarget) %>% 
+  pull() 
+
+mostvisiblemnd <- visiblefrom9412 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
+                as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
+coords <- rbind(coords, coords_out)
+
+lines_sm <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_sm) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_sm)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+```
+
+
+```{r print-fig4}
+# Start with map elements designed for 10in map offprint
+# Function to add a north arrow
+add_north_arrow <- function(x, y, length = 1, label = "N") {
+  arrows(x, y, x, y + length, col = "black", lwd = 2)
+  text(x, y + length + 1000, label, cex = 1, col = "black")
+}
+
+# Function to add a scale bar
+add_scale_bar <- function(x, y, length = 25000, label = "25 km") {
+  segments(x, y, x + length, y, col = "black", lwd = 2)
+  segments(x, y, x, y + 1000, col = "black", lwd = 2)
+  segments(x + length, y, x + length, y + 0.2, col = "black", lwd = 2)
+  text(x + length / 2, y - 1000, label, cex = 1, col = "black")
+}
+
+tiff("figures/04.tiff", width = 10, height = 10, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+# plot(Y_rivers, col= "blue", add =T)
+plot(BG$geometry, add = T, lwd = 4); plot(lines_sm, add =T)
+# Add north arrow at coordinates (8, 8)
+add_north_arrow(502000, 4642000, length = 2500, label = "N")
+# Add scale bar at coordinates (2,502000, 4645000 1)
+add_scale_bar(480000, 4640000)
+dev.off()
+```
+
+## Figure 05 - Winner 8007
+```{r prep-maps}
+# Yambol data
+Y_vis <- readRDS("output_data/Yam_mnds_intervis.rds")
+BG <- read_sf("data/Bulgaria_Border.shp")
+region <- read_sf("data/YamRegion.shp")
+mm_Yext <- read_sf("output_data/Y25_mapmounds.shp")
+
+# Yambol rasters
+library(terra)
+Y <- rast("data/large/Y_elev_ext.tif")
+d <- st_make_grid(st_bbox(st_buffer(region, 5000)), n =1)
+dem_Y5 <- crop(Y, d)
+```
+
+```{r prep-fig05}
+
+Y8007 <- readRDS("output_data/Y8007_intervis.rds")
+visiblefrom8007 <- Y8007 %>% 
+  filter(visibility == 1) %>% 
+  pull(TRAPtarget)
+mostvisiblemnd <- visiblefrom8007 # fill in model (veg10, veg20, none) for which we are calculating the lines of sight to the most visible mound
+
+coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
+                as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd)))))
+coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
+                as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
+coords <- rbind(coords, coords_out)
+
+
+lines_8007 <-  st_sfc(
+     lapply(1:nrow(coords),
+           function(i){
+             st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
+           }))
+
+st_crs(lines_8007) <- st_crs(Yam_mnds)
+
+
+library(mapview)
+mapview(lines_8007)+ 
+  mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
+
+```
+
+```{r}
+tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+# plot(Y_rivers, col= "blue", add =T)
+plot(BG$geometry, add = T, lwd = 4); plot(lines_8007, add =T)
+# Add north arrow at coordinates (8, 8)
+add_north_arrow(502000, 4642000, length = 2500, label = "N")
+# Add scale bar at coordinates (2,502000, 4645000 1)
+add_scale_bar(480000, 4640000)
 dev.off()
 ```
 
