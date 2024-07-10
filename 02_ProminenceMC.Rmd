@@ -1,0 +1,312 @@
+---
+title: "Yambol Mound Prominence in Vegetation-Simulated DEMs"
+author: "Adela Sobotkova"
+date: "2024-07-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+glimpse(Yam_mnds)
+```
+
+## Vegetation 10m DEM and Prominence at 2000 m
+### We start with mound densities
+```{r monte-carlo-begin}
+
+# Calculate the mound densities
+
+library(foreach) 
+library(purrrlyr)
+
+#note the exposition pipe operator $, which works as dataframe$variable
+mounds_densities <- Yam_mnds %$%  
+  veg10prom2000 %>%
+  density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+   broom::tidy() %>%
+   tibble::as_tibble() %>%
+  dplyr::mutate(y = y * 1201) %>%
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+### ..and continue with background landscape densities
+```{r region-densities}
+# Calculate possible densities across the study area using resampling
+# -------------------------
+# Load the prominence into memory for fast resampling
+yambol_region_values <- na.omit(randompoints$veg10prom2000)
+# Draw 99 random samples, and calculate their densities
+
+yambol_region_densities <- foreach::foreach(n = 1:99, .combine = rbind) %do% {
+  yambol_region_values %>%
+    sample(nrow(Yam_mnds),
+           replace = FALSE) %>%
+    density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+    broom::tidy() %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(y = y * 1201)
+} %>%
+  dplyr::group_by(x)
+
+# Check the interim dataset
+head(yambol_region_densities)
+
+# Calculate quantiles
+yambol_densities <- yambol_region_densities %>%
+  purrrlyr::by_slice(function(x){
+    quantile(x$y, probs = c(0.025, 0.5, 0.975)) %>%
+      t() #%>%
+      #broom::tidy()  
+    }, .collate = "rows") #%>%
+  #magrittr::set_names(c("Prominence", "Lower CI", "Frequency", "Upper CI"))
+
+# Rename and widen the quantiles dataset
+yambol_densities$names <- rep(c("Lower CI", "Median", "Upper CI"), 1201)
+yambol_densities_wide <- yambol_densities %>% pivot_wider(names_from = names,
+                     values_from = .out,
+                     values_fill = list(.out = NA))
+names(yambol_densities_wide)[1] <- "Prominence"
+head(yambol_densities_wide)
+
+# Rename original densities
+yambol_region_densities <- yambol_region_densities %>% 
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+
+## Plot the kernel density curves
+We’ll perform a statistical test on the mounds and resampled prominence data in a minute, but first it is just as helpful to view a graph of the two data sets. Like all things, R has many different ways of graphing data, but the `ggplot` package within tidyverse is perhaps the easiest for graphics in R.  ggplot uses a pipe-like system for building graphs, where graphical elements are appended to one-another using the `+` operator.
+
+
+### Plot both distributions using ggplot
+```{r plot-densities}
+g <- ggplot() +
+  geom_line(data = yambol_region_densities,
+            mapping = aes(x = Prominence,
+                          y = Frequency),
+            col = "lightgrey") +
+  geom_ribbon(data = yambol_densities_wide,
+              mapping = aes(x = Prominence,
+                            ymin = `Lower CI`,
+                            ymax = `Upper CI`),
+              col = "darkgrey", size = 1.5,
+              alpha = 0.5) +
+  geom_line(data = mounds_densities,
+               mapping = aes(x = Prominence,
+                             y = Frequency),
+               color = "red", size=2)+
+  theme_bw()+
+  labs(colour = "Legend")
+g
+ggsave("figures/MndProm2000_veg10.png")
+```
+This plot is much more revealing than the histogram we started with.  The landscape data (represented by the dark grey band enclosed by light gray confidence interval) forms an arc and has two main modes at ca 20% and 70% prominence. The mound data has a single and higher mode at ca 70% prominence and escapes the bounds of randomness in the 30-75% prominence band.  From this visual investigation alone, we can see that the mound locations differ from a random sample taken from the landscape of Yambol region. The next question is how significant is this result, really? 
+
+
+## Vegetation 10m DEM and Prominence at 250 m
+### We start with mound densities
+```{r monte-carlo-begin}
+
+# Calculate the mound densities
+
+library(foreach) 
+library(purrrlyr)
+
+#note the exposition pipe operator $, which works as dataframe$variable
+mounds_densities <- Yam_mnds %$%  
+  veg10prom %>%
+  density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+   broom::tidy() %>%
+   tibble::as_tibble() %>%
+  dplyr::mutate(y = y * 1201) %>%
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+### ..and continue with background landscape densities
+```{r region-densities}
+# Calculate possible densities across the study area using resampling
+# -------------------------
+# Load the prominence into memory for fast resampling
+yambol_region_values <- na.omit(randompoints$veg10prom)
+# Draw 99 random samples, and calculate their densities
+
+yambol_region_densities <- foreach::foreach(n = 1:99, .combine = rbind) %do% {
+  yambol_region_values %>%
+    sample(nrow(Yam_mnds),
+           replace = FALSE) %>%
+    density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+    broom::tidy() %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(y = y * 1201)
+} %>%
+  dplyr::group_by(x)
+
+# Check the interim dataset
+head(yambol_region_densities)
+
+# Calculate quantiles
+yambol_densities <- yambol_region_densities %>%
+  purrrlyr::by_slice(function(x){
+    quantile(x$y, probs = c(0.025, 0.5, 0.975)) %>%
+      t() #%>%
+      #broom::tidy()  
+    }, .collate = "rows") #%>%
+  #magrittr::set_names(c("Prominence", "Lower CI", "Frequency", "Upper CI"))
+
+# Rename and widen the quantiles dataset
+yambol_densities$names <- rep(c("Lower CI", "Median", "Upper CI"), 1201)
+yambol_densities_wide <- yambol_densities %>% pivot_wider(names_from = names,
+                     values_from = .out,
+                     values_fill = list(.out = NA))
+names(yambol_densities_wide)[1] <- "Prominence"
+head(yambol_densities_wide)
+
+# Rename original densities
+yambol_region_densities <- yambol_region_densities %>% 
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+
+## Plot the kernel density curves
+We’ll perform a statistical test on the mounds and resampled prominence data in a minute, but first it is just as helpful to view a graph of the two data sets. Like all things, R has many different ways of graphing data, but the `ggplot` package within tidyverse is perhaps the easiest for graphics in R.  ggplot uses a pipe-like system for building graphs, where graphical elements are appended to one-another using the `+` operator.
+
+
+### Plot both distributions using ggplot
+```{r plot-densities}
+g250 <- ggplot() +
+  geom_line(data = yambol_region_densities,
+            mapping = aes(x = Prominence,
+                          y = Frequency),
+            col = "lightgrey") +
+  geom_ribbon(data = yambol_densities_wide,
+              mapping = aes(x = Prominence,
+                            ymin = `Lower CI`,
+                            ymax = `Upper CI`),
+              col = "darkgrey", size = 1.5,
+              alpha = 0.5) +
+  geom_line(data = mounds_densities,
+               mapping = aes(x = Prominence,
+                             y = Frequency),
+               color = "red", size=2)+
+  theme_bw()+
+  labs(colour = "Legend")
+g250
+ggsave("figures/MndProm250_veg10.png")
+```
+ 
+Results DESCRIPTION
+
+## Vegetation 20m DEM and Prominence at 2000 m
+### We start with mound densities
+```{r monte-carlo-begin}
+
+# Calculate the mound densities
+
+library(foreach) 
+library(purrrlyr)
+
+#note the exposition pipe operator $, which works as dataframe$variable
+mounds_densities <- Yam_mnds %$%  
+  veg20prom2000 %>%
+  density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+   broom::tidy() %>%
+   tibble::as_tibble() %>%
+  dplyr::mutate(y = y * 1201) %>%
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+### ..and continue with background landscape densities
+```{r region-densities}
+# Calculate possible densities across the study area using resampling
+# -------------------------
+# Load the prominence into memory for fast resampling
+yambol_region_values <- na.omit(randompoints$veg20prom2000)
+# Draw 99 random samples, and calculate their densities
+
+yambol_region_densities <- foreach::foreach(n = 1:99, .combine = rbind) %do% {
+  yambol_region_values %>%
+    sample(nrow(Yam_mnds),
+           replace = TRUE) %>%
+    density(from = 0,
+            to = 100,
+            n = 1201) %>% 
+    broom::tidy() %>%
+    tibble::as_tibble() %>%
+    dplyr::mutate(y = y * 1201)
+} %>%
+  dplyr::group_by(x)
+
+# Check the interim dataset
+head(yambol_region_densities)
+
+# Calculate quantiles
+yambol_densities <- yambol_region_densities %>%
+  purrrlyr::by_slice(function(x){
+    quantile(x$y, probs = c(0.025, 0.5, 0.975)) %>%
+      t() #%>%
+      #broom::tidy()  
+    }, .collate = "rows") #%>%
+  #magrittr::set_names(c("Prominence", "Lower CI", "Frequency", "Upper CI"))
+
+# Rename and widen the quantiles dataset
+yambol_densities$names <- rep(c("Lower CI", "Median", "Upper CI"), 1201)
+yambol_densities_wide <- yambol_densities %>% pivot_wider(names_from = names,
+                     values_from = .out,
+                     values_fill = list(.out = NA))
+names(yambol_densities_wide)[1] <- "Prominence"
+head(yambol_densities_wide)
+
+# Rename original densities
+yambol_region_densities <- yambol_region_densities %>% 
+  dplyr::rename(Prominence = x,
+                Frequency = y)
+
+```
+
+## Plot the kernel density curves
+We’ll perform a statistical test on the mounds and resampled prominence data in a minute, but first it is just as helpful to view a graph of the two data sets. Like all things, R has many different ways of graphing data, but the `ggplot` package within tidyverse is perhaps the easiest for graphics in R.  ggplot uses a pipe-like system for building graphs, where graphical elements are appended to one-another using the `+` operator.
+
+
+### Plot both distributions using ggplot
+```{r plot-densities}
+gveg20 <- ggplot() +
+  geom_line(data = yambol_region_densities,
+            mapping = aes(x = Prominence,
+                          y = Frequency),
+            col = "lightgrey") +
+  geom_ribbon(data = yambol_densities_wide,
+              mapping = aes(x = Prominence,
+                            ymin = `Lower CI`,
+                            ymax = `Upper CI`),
+              col = "darkgrey", size = 1.5,
+              alpha = 0.5) +
+  geom_line(data = mounds_densities,
+               mapping = aes(x = Prominence,
+                             y = Frequency),
+               color = "red", size=2)+
+  theme_bw()+
+  labs(colour = "Legend")
+gveg20
+ggsave("figures/MndProm2000_veg20.png")
+```
+
+ 
+ 
