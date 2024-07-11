@@ -7,16 +7,20 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(raster)
+library(terra)
 ```
 
-```{r}
+```{r data}
 glimpse(Yam_mnds)
+glimpse(randompoints)
+randompoints$id <- 1:1501
 ```
-
-## Vegetation 10m DEM and Prominence at 2000 m
+## BOM and prominence at 250 m
 ### We start with mound densities
 ```{r monte-carlo-begin}
-
 # Calculate the mound densities
 
 library(foreach) 
@@ -24,7 +28,7 @@ library(purrrlyr)
 
 #note the exposition pipe operator $, which works as dataframe$variable
 mounds_densities <- Yam_mnds %$%  
-  veg10prom2000 %>%
+  prom250mbuff %>%
   density(from = 0,
             to = 100,
             n = 1201) %>% 
@@ -40,13 +44,13 @@ mounds_densities <- Yam_mnds %$%
 # Calculate possible densities across the study area using resampling
 # -------------------------
 # Load the prominence into memory for fast resampling
-yambol_region_values <- na.omit(randompoints$veg10prom2000)
+yambol_region_values <- na.omit(randompoints$prom250buff)
 # Draw 99 random samples, and calculate their densities
 
 yambol_region_densities <- foreach::foreach(n = 1:99, .combine = rbind) %do% {
   yambol_region_values %>%
     sample(nrow(Yam_mnds),
-           replace = FALSE) %>%
+           replace = TRUE) %>%
     density(from = 0,
             to = 100,
             n = 1201) %>% 
@@ -84,12 +88,8 @@ yambol_region_densities <- yambol_region_densities %>%
 ```
 
 ## Plot the kernel density curves
-We’ll perform a statistical test on the mounds and resampled prominence data in a minute, but first it is just as helpful to view a graph of the two data sets. Like all things, R has many different ways of graphing data, but the `ggplot` package within tidyverse is perhaps the easiest for graphics in R.  ggplot uses a pipe-like system for building graphs, where graphical elements are appended to one-another using the `+` operator.
-
-
-### Plot both distributions using ggplot
 ```{r plot-densities}
-g <- ggplot() +
+g_random250 <- ggplot() +
   geom_line(data = yambol_region_densities,
             mapping = aes(x = Prominence,
                           y = Frequency),
@@ -106,10 +106,90 @@ g <- ggplot() +
                color = "red", size=2)+
   theme_bw()+
   labs(colour = "Legend")
-g
-ggsave("figures/MndProm2000_veg10.png")
+g_random250
+ggsave("figures/MndProm250_BOM.png", width = 7, height = 5)
 ```
-This plot is much more revealing than the histogram we started with.  The landscape data (represented by the dark grey band enclosed by light gray confidence interval) forms an arc and has two main modes at ca 20% and 70% prominence. The mound data has a single and higher mode at ca 70% prominence and escapes the bounds of randomness in the 30-75% prominence band.  From this visual investigation alone, we can see that the mound locations differ from a random sample taken from the landscape of Yambol region. The next question is how significant is this result, really? 
+ 
+The landscape data (represented by the dark grey band enclosed by light gray confidence interval) forms an arc and has a main mode at ca 50% prominence and a secondary peak at 80%. The mound data has a much more tight and higher mode at ca 70% prominence and escapes the bounds of randomness in the 70-80% prominence band. From this visual investigation alone, we can see that the mound locations differ from a random sample taken from the landscape of Yambol region. The next question is how significant is this result, really?
+
+
+## Statistical testing
+
+Let us try two different tests to see if the ancient mound builders selected mound locations randomly? The question we aim to answer is: could the mounds be a random sample of locations from the study area?
+
+In each test, the landscape values are our control group while the mound values comprise an experimental group that we are testing.
+
+We are testing whether the mound locations were likely a random sample of locations drawn from our study area. Again, we’ll use Monte Carlo resampling to generate confidence intervals for our test statistic. Finally, we will output the test data to a comma-separated values (CSV) file for inclusion in external reports.
+
+
+## Student's T-test (for large normal data)
+
+First, we shall try a t-test (a basic test that checks for independence between two independent samples selected from a normal distribution). This is primarily applicable to the prominence data, as its distribution resembles a normal one. 
+
+### Prominence
+```{r t-test-prom}
+# Draw 999 random samples from the region, and compute a t-test
+YMound_prom_TT <- foreach(n = 1:99, .combine = rbind) %do% {
+  Yambol_sample <- yambol_region_values %>%
+    sample(nrow(Yam_mnds),
+           replace = FALSE) %>%
+    t.test(x = Yam_mnds$prom250mbuff,
+                y = .,
+                alternative = "greater") %>%
+   broom::tidy() %>%
+   tibble::as_tibble()
+}%>%
+  dplyr::select(statistic, p.value)
+
+# Get the median test statistic and 95% confidence interval
+YMound_prom_TT <- foreach::foreach(prob = c(0.025,0.5,0.975), .combine = rbind) %do% {
+  YMound_prom_TT %>%
+      dplyr::summarise_all(quantile, probs = prob)
+} %>%
+  t() %>%
+  magrittr::set_colnames(c("Lower CI","Median","Upper CI")) %>%
+  magrittr::set_rownames(c("U statistic","p-value"))
+
+
+write.csv(YMound_prom_TT , "output_data/TT_prom250buff_presults.csv")  
+
+YMound_prom_TT 
+```
+## Mann-Whitney non-parametric test (for small non-parametric data)
+
+Second, we will use the nonparametric Mann-Whitney U test (also known as a Wilcoxon test). This is used mostly for distributions that are not statistically normal, such as the elevation data, which are right-skewed and non-normal in their distribution. Again, we shall run the test also for prominence, just to see how it comes out.
+
+```{r mw-test-prom}
+# Draw 999 random samples from the region, and compute two-sample Wilcoxon tests (Mann-Whitney U tests)
+YMound_prom_MWU <- foreach(n = 1:999, .combine = rbind) %do% {
+  Yambol_sample <- yambol_region_values %>%
+    sample(nrow(Yam_mnds),
+           replace = FALSE) %>%
+    wilcox.test(x = Yam_mnds$prom250mbuff,
+                y = .,
+                alternative = "greater",
+                exact = FALSE) %>%
+   broom::tidy() %>%
+   tibble::as_tibble()
+}%>%
+  dplyr::select(statistic, p.value)
+
+# Get the median test statistic and 95% confidence interval
+YMound_prom_MWU <- foreach::foreach(prob = c(0.025,0.5,0.975), .combine = rbind) %do% {
+  YMound_prom_MWU %>%
+      dplyr::summarise_all(quantile, probs = prob)
+} %>%
+  t() %>%
+  magrittr::set_colnames(c("Lower CI","Median","Upper CI")) %>%
+  magrittr::set_rownames(c("U statistic","p-value"))
+
+# Write output table as a CSV
+
+write.csv(YMound_prom_MWU, "output_data/Mann_Whitney_prom250buff_results.csv")
+
+options(scipen = 999)
+YMound_prom_MWU
+```
 
 
 ## Vegetation 10m DEM and Prominence at 250 m
@@ -211,10 +291,9 @@ ggsave("figures/MndProm250_veg10.png")
  
 Results DESCRIPTION
 
-## Vegetation 20m DEM and Prominence at 2000 m
+## Vegetation 20m DEM and Prominence at 250 m
 ### We start with mound densities
 ```{r monte-carlo-begin}
-
 # Calculate the mound densities
 
 library(foreach) 
@@ -222,7 +301,7 @@ library(purrrlyr)
 
 #note the exposition pipe operator $, which works as dataframe$variable
 mounds_densities <- Yam_mnds %$%  
-  veg20prom2000 %>%
+  veg20prom %>%
   density(from = 0,
             to = 100,
             n = 1201) %>% 
@@ -238,7 +317,7 @@ mounds_densities <- Yam_mnds %$%
 # Calculate possible densities across the study area using resampling
 # -------------------------
 # Load the prominence into memory for fast resampling
-yambol_region_values <- na.omit(randompoints$veg20prom2000)
+yambol_region_values <- na.omit(randompoints$veg20prom)
 # Draw 99 random samples, and calculate their densities
 
 yambol_region_densities <- foreach::foreach(n = 1:99, .combine = rbind) %do% {
@@ -282,31 +361,3 @@ yambol_region_densities <- yambol_region_densities %>%
 ```
 
 ## Plot the kernel density curves
-We’ll perform a statistical test on the mounds and resampled prominence data in a minute, but first it is just as helpful to view a graph of the two data sets. Like all things, R has many different ways of graphing data, but the `ggplot` package within tidyverse is perhaps the easiest for graphics in R.  ggplot uses a pipe-like system for building graphs, where graphical elements are appended to one-another using the `+` operator.
-
-
-### Plot both distributions using ggplot
-```{r plot-densities}
-gveg20 <- ggplot() +
-  geom_line(data = yambol_region_densities,
-            mapping = aes(x = Prominence,
-                          y = Frequency),
-            col = "lightgrey") +
-  geom_ribbon(data = yambol_densities_wide,
-              mapping = aes(x = Prominence,
-                            ymin = `Lower CI`,
-                            ymax = `Upper CI`),
-              col = "darkgrey", size = 1.5,
-              alpha = 0.5) +
-  geom_line(data = mounds_densities,
-               mapping = aes(x = Prominence,
-                             y = Frequency),
-               color = "red", size=2)+
-  theme_bw()+
-  labs(colour = "Legend")
-gveg20
-ggsave("figures/MndProm2000_veg20.png")
-```
-
- 
- 

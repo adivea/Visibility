@@ -71,8 +71,14 @@ hist(Yam_mnds$veg10prom, main = "Prominence range within the Yambol landscape \n
 hist(Yam_mnds$veg20prom, main = "Prominence range within the Yambol landscape \n with 20m vegetation", xlab = "Prominence (%)")
 
 randompoints <- sf::st_sample(region, size = 1500) # generate sample as big as the mounds
+randompoints <- randompoints %>% st_as_sf()
 plot(region$geometry);plot(randompoints, add= T)
 
+
+randompoints$prom250buff <- raster::extract(Y_elev,    
+                                          st_as_sf(randompoints),     
+                                          buffer = 250,           
+                                          fun = function(x){perc(x,x[length(x)/2],"lt", na.rm = FALSE, digits = 2)})
 
 randompoints$veg10prom <- raster::extract(Y_elev10,    
                                      st_sf(randompoints),     
@@ -84,7 +90,7 @@ randompoints$veg20prom <- raster::extract(Y_elev20grad,
                                           fun = function(x){perc(x,x[length(x)/2],"lt", na.rm = FALSE, digits = 2)})
 
 
-hist(randompoints$prom, main = "Prominence range within the Yambol landscape", xlab = "Prominence (%)")
+hist(randompoints$prom250buff, main = "Prominence range within the Yambol landscape", xlab = "Prominence (%)")
 
 ###################  Prominence at 2000 m radius
 library(FSA)
