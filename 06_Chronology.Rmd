@@ -117,6 +117,7 @@ dev.off()
 mapview(Yam_aor,zcol = "StartDate" ) + mapview(Yam_izv, zcol = "StartDate") + 
   mapview(Yam_mnds, cex = 1)
 mapview(Yam_mnds %>% filter(prom250mbuff >75))
+mapview(Yam_aor %>% filter(MoundID == 1476)) # additional review on 16 July 2024 fixed Western necropolis and Golyam Dervent dolmen which was wrongly digitized.
 
 mapview(all,zcol = "StartDate" ) +   mapview(Yam_mnds, cex = 1)
 mapview(all,zcol = "Enddate" ) +   mapview(Yam_mnds, cex = 1)

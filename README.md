@@ -4,7 +4,7 @@ This repository contains scripts for intervisibility calculation and prominence 
 The scripts need a bit more clean up:
 
 - separate the compute-intense calculations into separate scripts DONE (01, 02)
-- check all the interim products are consistently named
+- check all the interim products are consistently named (IN PROGRESS)
 
 
 The purpose of current scripts is: 
