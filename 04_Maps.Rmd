@@ -19,9 +19,11 @@ library(mapview)
 
 ```{r}
 path <- "C:/Users/au616760/OneDrive - Aarhus universitet/Documents/TRAP_Oxbow"
+path <- "C:/Users/Adela/OneDrive/Desktop/TRAP_Oxbow"
 # A bit of local infrastructure and topography
 Y_towns <- read_sf(paste0(path, "/TopoData/Modern_settlements_Yambol_TRAP.shp"))
 Y_rivers <- read_sf(paste0(path, "/TopoData/Rivers_Yambol_TRAP.shp"))
+Tonzos <- read_sf(paste0(path, "/TopoData/Tonzos.shp")) %>% st_transform(32635)
 Y_roads <- read_sf(paste0(path, "/TopoData/Modern_roads_Yambol_TRAP.shp"))
 BG <- read_sf("data/Bulgaria_Border.shp")
 region <- read_sf("data/YamRegion.shp")
@@ -44,10 +46,23 @@ options(scipen=999)
 ## Map background
 
 ```{r}
-#tiff("figures/00.tiff", width = 6, height = 7, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
-plot(BG$geometry, add = T, lwd = 2)
-#dev.off()
+tiff("figures/background.tiff", width = 8, height = 8, units = "in", res = 300)
+#png("figures/background.png", width = 8, height = 8, units = "in", res = 300)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); 
+plot(region$geometry, add =T); 
+#plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(BG$geometry, add = T, lwd = 4)
+plot(Y_city$geometry, add = T, col = "darkgrey", border ="darkgrey")
+plot(Tonzos$geometry, lwd = 2, col = "lightblue", add =T);
+plot(Yam_mnds$geometry, cex= 0.4, add =T); 
+
+# Add north arrow at coordinates (8, 8). See line 135
+add_north_arrow(502000, 4642000, length = 2500, label = "N")
+# Add scale bar at coordinates (2,502000, 4645000 1)
+add_scale_bar(480000, 4640000)
+text("Yambol", x = 460000, y = 4702000)
+
+dev.off()
 ```
 
 ## MOST Intervisible 
