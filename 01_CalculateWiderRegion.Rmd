@@ -15,7 +15,7 @@ library(mapview)
 
 
 ## Load Yambol mounds, rasters, and region
-```{r}
+```{r} 
 # Yambol mounds
 Yam_mnds <- readRDS("data/Yam_dd_mnds.rds") # 1073 features
 Yam_mnds %>% 
@@ -32,7 +32,7 @@ Y35 <- raster("data/large/Y_elev_ext.tif") # horizontal
 region <- read_sf("data/YamRegion.shp")
 #Y_buf25 <- st_buffer(region, 25000)
 Y_buf25 <- st_read("data/Y_region_buf25k.shp")
-
+plot(Y35);plot(region, borders = "blue", add=T)
 ```
 
 ## Mounds from Wider area

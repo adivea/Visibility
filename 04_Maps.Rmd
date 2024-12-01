@@ -113,18 +113,19 @@ coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP 
 coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 9412))),
                 as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
 coords <- rbind(coords, coords_out)
+colnames(coords) <- c("X1", "Y1", "X2", "Y2")
 
-lines_sm <-  st_sfc(
+lines_9412 <-  st_sfc(
      lapply(1:nrow(coords),
            function(i){
              st_linestring(matrix(coords[i,],ncol=2,byrow=TRUE))
            }))
 
-st_crs(lines_sm) <- st_crs(Yam_mnds)
+st_crs(lines_9412) <- st_crs(Yam_mnds)
 
 
 library(mapview)
-mapview(lines_sm)+ 
+mapview(lines_9412)+ 
   mapview(Yam_mnds %>% filter(TRAP %in% mostvisiblemnd))
 
 # https://stackoverflow.com/questions/65498300/how-to-efficiently-create-linestrings-from-points
@@ -155,7 +156,7 @@ add_scale_bar <- function(x, y, length = 25000, label = "25 km") {
 tiff("figures/04.tiff", width = 10, height = 10, units = "in", res = 300)
 plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
-plot(BG$geometry, add = T, lwd = 4); plot(lines_sm, add =T)
+plot(BG$geometry, add = T, lwd = 4); plot(lines_9412, add =T)
 # Add north arrow at coordinates (8, 8)
 add_north_arrow(502000, 4642000, length = 2500, label = "N")
 # Add scale bar at coordinates (2,502000, 4645000 1)
@@ -178,6 +179,7 @@ coords <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP 
 coords_out <- as.matrix(cbind(as.data.frame(st_coordinates(Yam_mnds %>% filter(TRAP == 8007))),
                 as.data.frame(st_coordinates(mm_Yext %>% filter( Id %in% mostvisiblemnd)))))
 coords <- rbind(coords, coords_out)
+colnames(coords) <- c("X1", "Y1", "X2", "Y2")
 
 
 lines_8007 <-  st_sfc(
@@ -202,12 +204,102 @@ mapview(lines_8007)+
 
 ```{r fig8007}
 tiff("figures/05.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
-# plot(Y_rivers, col= "blue", add =T)
-plot(BG$geometry, add = T, lwd = 4); plot(lines_8007, add =T)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); 
+plot(region$geometry, add =T); 
+plot(Yam_mnds$geometry, cex= 0.4, add =T); 
+plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(BG$geometry, add = T, lwd = 4); 
+plot(lines_8007, add =T)
 # Add north arrow at coordinates (8, 8)
 add_north_arrow(502000, 4642000, length = 2500, label = "N")
 # Add scale bar at coordinates (2,502000, 4645000 1)
 add_scale_bar(480000, 4640000)
 dev.off()
 ```
+
+## Intervisibility Distances
+```{r}
+# Check that you have 9412 coords
+dim(coords)
+coords
+# Calculate distances
+distances <- sqrt((coords[, "X2"] - coords[, "X1"])^2 + (coords[, "Y2"] - coords[, "Y1"])^2)
+length(distances)
+
+lines_9412_sf <- st_sf(geometry = lines_9412)
+
+
+lines_9412_sf$length_m <- distances
+lines_9412_sf$length_km <- distances/1000
+hist(lines_9412_sf$length_km,
+     xlab = "Distance (km)", 
+     ylab = "Number of visible mounds", 
+     main = "Mounds visible from 9412 (no = 491)")
+
+
+lines_9412_sf$visibility_group <- cut(lines_9412_sf$length_km,
+                                   breaks = c(0, 5, 10, 20, Inf),
+                                   labels = c("1-5km", "5-10km", "10-20km","20+km"),
+                                   right = FALSE)
+head(lines_9412_sf$visibility_group)
+head(lines_9412_sf$length_km)
+
+
+line_types <- setNames(c("solid", "dashed", "dotted", "dotdash"), c("1-5km", "5-10km", "10-20km", "20+km"))
+
+
+# Plot everything toether (run through row 264)
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); 
+plot(region$geometry, add =T); 
+plot(Yam_mnds$geometry, cex= 0.4, add =T); 
+plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(BG$geometry, add = T, lwd = 4); 
+
+# Plot lines by visibility group
+# for (type in names(line_types)) {
+#   lines_subset <- st_geometry(lines_9412_sf[lines_9412_sf$visibility_group == type, ])
+#   plot(lines_subset, add = TRUE, lty = line_types[[type]])
+# }
+# Plot lines by visibility group
+plot(st_geometry(lines_9412_sf[lines_9412_sf$visibility_group == "20+km", ]), add = TRUE, lty = "dotted")
+plot(st_geometry(lines_9412_sf[lines_9412_sf$visibility_group == "10-20km", ]), add = TRUE, lty = "dashed")
+plot(st_geometry(lines_9412_sf[lines_9412_sf$visibility_group == "5-10km", ]), add = TRUE, lty = "solid")
+plot(lines_9412_sf %>% filter(visibility_group == "1-5km") %>% st_geometry(),  add = TRUE, lty = "solid")
+
+
+
+
+# Add a legend
+legend("topright", legend = names(line_types), lty = line_types, title = "Visibility Range")
+
+
+
+
+
+
+
+
+for (type in names(line_types)) {
+  lines_subset <- st_geometry(lines_9412_sf[lines_9412_sf$visibility_group == type, ])
+  plot(lines_subset, add = TRUE, lty = line_types[[type]])
+}
+
+
+
+```
+
+```{r}
+# Define line styles for each visibility group
+line_styles <- c("1-5km" = "solid", "5-10km" = "dashed", "10-20km" = "dotted", "20+km" = "dotdash")
+
+# Plotting with ggplot2 for better control over aesthetics
+ggplot() +
+  geom_raster(data = dem_Y5, fill = grey.colors(5, start = 1, end = 0)) +  # Assuming dem_Y5 is also an sf object
+  geom_sf(data = lines_9412_sf, aes(color = visibility_group, linetype = visibility_group)) +
+  scale_linetype_manual(values = line_styles) +
+  labs(title = "Visibility from Point 9412",
+       color = "Visibility Range",
+       linetype = "Visibility Range") +
+  theme_minimal()
+```
+

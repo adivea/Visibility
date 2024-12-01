@@ -172,7 +172,10 @@ add_scale_bar <- function(x, y, length = 25000, label = "25 km") {
 }
 
 tiff("figures/05A.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); 
+plot(region$geometry, add =T); 
+plot(Yam_mnds$geometry, cex= 0.4, add =T); 
+plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
 plot(BG$geometry, add = T, lwd = 4); plot(lines_sm, add =T)
 # Add north arrow at coordinates (8, 8)
@@ -206,7 +209,6 @@ dem_Y5 <- crop(Y, d)
 ```
 
 ```{r prep-fig05}
-
 Y8007 <- readRDS("output_data/Y8007_intervis.rds")
 visiblefrom8007 <- Y8007 %>% 
   filter(visibility == 1) %>% 
@@ -250,9 +252,13 @@ dev.off()
 
 ```{r}
 tiff("figures/05B.tiff", width = 10, height = 10, units = "in", res = 300)
-plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); plot(region$geometry, add =T); plot(Yam_mnds$geometry, cex= 0.4, add =T); plot(mm_Yext$geometry, cex = 0.4, add =T);
+plot(dem_Y5, col = grey.colors(5, start = 1, end = 0)); 
+plot(region$geometry, add =T); 
+plot(Yam_mnds$geometry, cex= 0.4, add =T); 
+plot(mm_Yext$geometry, cex = 0.4, add =T);
 # plot(Y_rivers, col= "blue", add =T)
-plot(BG$geometry, add = T, lwd = 4); plot(lines_8007, add =T)
+plot(BG$geometry, add = T, lwd = 4); 
+plot(lines_8007, add =T)
 # Add north arrow at coordinates (8, 8)
 add_north_arrow(502000, 4642000, length = 2500, label = "N")
 # Add scale bar at coordinates (2,502000, 4645000 1)
